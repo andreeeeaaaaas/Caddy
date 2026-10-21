@@ -43,6 +43,17 @@ def extract_frames_at_timecodes(video_path: str, timecodes: list, workspace: str
     return frames
 
 
+def extract_single_frame(video_path: str, t: float, out_path: str) -> bool:
+    """Extract one JPEG at t seconds (frame-accurate, same method as above). True on success."""
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    cmd = [
+        "ffmpeg", "-y", "-i", video_path,
+        "-ss", str(t), "-frames:v", "1", "-q:v", "2", out_path,
+    ]
+    subprocess.run(cmd, capture_output=True)
+    return os.path.exists(out_path) and os.path.getsize(out_path) > 0
+
+
 def run_pipeline(video_path: str, timecodes: list, options: dict, progress_queue: queue.Queue):
     """
     Run the full pipeline in a background thread, pushing progress dicts onto
@@ -149,6 +160,9 @@ def generate_pdf(rows: list, output_path: str):
             f"<b>VO:</b> {vo_text}<br/><br/>"
             f"<b>SUPER:</b> {super_text}"
         )
+        for label, key in (("JINGLE", "jingle"), ("GRAPHICS", "graphics")):
+            if row.get(key):
+                script_content += f"<br/><br/><b>{label}:</b> {row[key]}"
         script_cell = Paragraph(script_content, normal)
 
         table_data.append([frame_cell, script_cell])

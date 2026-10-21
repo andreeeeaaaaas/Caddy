@@ -19,8 +19,8 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from pipeline import start_pipeline, generate_pdf
-from storyboard import get_video_metadata, generate_docx, SUPPORTED_FORMATS
+from pipeline import start_pipeline, generate_pdf, extract_single_frame
+from storyboard import get_video_metadata, generate_docx, format_timecode, SUPPORTED_FORMATS
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
@@ -73,10 +73,12 @@ def _extract_auto_frames(session: Session):
         filter_str = f"select='eq(n\\,0)+gt(scene\\,{threshold})',showinfo"
         result = subprocess.run(
             ["ffmpeg", "-y", "-i", session.video_path,
-             "-vf", filter_str, "-vsync", "vfr", "-q:v", "3",
+             "-vf", filter_str, "-fps_mode", "vfr", "-q:v", "3",
              str(auto_dir / "auto_%04d.jpg")],
             capture_output=True, text=True,
         )
+        if result.returncode != 0:
+            print(f"[auto-frames] ffmpeg failed ({result.returncode}): {result.stderr[-500:]}")
 
         # Parse exact timestamps from ffmpeg stderr showinfo output
         timestamps = []
@@ -267,6 +269,39 @@ async def save_rows(session_id: str, req: SaveRowsRequest):
     s = get_session(session_id)
     s.rows = req.rows
     return {"saved": True}
+
+
+class AddFrameRequest(BaseModel):
+    time: float
+
+
+@app.post("/api/frame/{session_id}")
+async def add_frame(session_id: str, req: AddFrameRequest):
+    """Extract one frame from the review screen and return a new, empty row for it."""
+    s = get_session(session_id)
+    duration = s.metadata.get("duration", 0)
+    if req.time < 0 or (duration and req.time > duration):
+        raise HTTPException(status_code=400, detail="Time is outside the video")
+    if any(abs(r.get("timecode_seconds", -1) - req.time) < 0.2 for r in s.rows):
+        raise HTTPException(status_code=409, detail="A frame already exists at this time")
+
+    filename = f"frame_add_{int(req.time * 1000):08d}.jpg"
+    out_path = Path(s.workspace) / "frames" / filename
+    if not extract_single_frame(s.video_path, req.time, str(out_path)):
+        raise HTTPException(status_code=500, detail="Could not extract frame")
+
+    return {
+        "timecode_seconds": req.time,
+        "timecode_display": format_timecode(req.time),
+        "thumbnail_path": str(out_path),
+        "thumbnail_url": f"/thumbs/{session_id}/{filename}",
+        "transcript": "",
+        "supers": [],
+        "jingle": "",
+        "graphics": "",
+        "notes": "",
+        "status": "PENDING",
+    }
 
 
 # ---------------------------------------------------------------------------

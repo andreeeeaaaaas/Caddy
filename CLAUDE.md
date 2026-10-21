@@ -9,7 +9,7 @@ pip install -r requirements.txt
 # First run downloads Whisper base model (~150MB)
 ```
 
-Requires `ffmpeg` and `ffprobe` on PATH (`brew install ffmpeg`).
+Requires `ffmpeg` and `ffprobe` on PATH (`brew install ffmpeg`), version 5.1 or newer (scene detection uses `-fps_mode`, which replaced `-vsync`).
 
 ## Running
 
@@ -47,8 +47,11 @@ Three files:
 
 ### Post-processing
 
-- UI displays rows in an editable table; user can edit VO text, supers, and notes
+- UI displays rows in an editable script sheet; user can edit VO, supers, jingle, graphics, and notes
+- Clicking a row opens an inspect drawer: full-size frame, segment player, mark as checked (`status` PENDING/CHECKED), delete frame, and add frame at the playhead
 - Edited rows are saved back via `POST /api/rows/{session_id}`
+- `POST /api/frame/{session_id}` extracts one frame at a time and returns a new empty row (used by "Add frame")
+- "Re-select frames" re-runs the pipeline and discards all edits
 - Export: `GET /api/export/docx/{session_id}` (python-docx) or `GET /api/export/pdf/{session_id}` (ReportLab)
 
 ## Key Constants

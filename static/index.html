@@ -79,28 +79,31 @@
 
 <!-- S3: Processing -->
 <div id="screen-processing" class="screen">
-  <div id="processing-card">
-    <div id="processing-progress"></div>
+  <div id="processing-card" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-labelledby="processing-title">
+    <svg id="processing-stroke" aria-hidden="true"><path id="stroke-r" pathLength="100"/><path id="stroke-l" pathLength="100"/></svg>
     <div id="processing-title">Processing</div>
-    <div id="processing-label">Starting…</div>
-    <div id="processing-cancel">CANCEL</div>
+    <div id="processing-label" role="status">Starting…</div>
+    <button id="processing-cancel">Cancel</button>
   </div>
 </div>
 
 <!-- S4: Edit -->
 <div id="screen-edit" class="screen">
-  <div id="edit-sidebar">
-    <div id="edit-thumb-list"></div>
-    <div id="edit-sidebar-actions">
-      <button class="side-btn ghost" id="btn-back-frames">↩ Re-select Frames</button>
-      <button class="side-btn primary" id="btn-export-docx">Export DOCX</button>
-      <button class="side-btn primary" id="btn-export-pdf">Export PDF</button>
+  <div id="edit-bar">
+    <div id="edit-summary">
+      <span id="edit-count"></span>
+      <span id="edit-checked"></span>
+    </div>
+    <div id="edit-bar-actions">
+      <button class="bar-btn ghost" id="btn-back-frames">↩ Re-select frames</button>
+      <button class="bar-btn" id="btn-export-docx">Export DOCX</button>
+      <button class="bar-btn primary" id="btn-export-pdf">Export PDF</button>
     </div>
   </div>
   <div id="edit-main">
     <table id="storyboard">
       <thead>
-        <tr><th>#</th><th>Frame</th><th>TC</th><th>Script</th></tr>
+        <tr><th></th><th>Frame</th><th>TC</th><th>VO</th><th>Super</th><th>Jingle</th><th>Graphics</th><th>Notes</th></tr>
       </thead>
       <tbody id="storyboard-body"></tbody>
     </table>
@@ -350,17 +353,22 @@ const App = {
   // ── Screen 3: Processing ──────────────────────────────────────
   async _startProcessing() {
     this.show('processing');
-    document.getElementById('processing-progress').style.width = '5%';
+    const run = this._procRun = (this._procRun || 0) + 1;   // a newer run or a cancel invalidates this one
+    document.getElementById('processing-card').classList.remove('error');
+    this._layoutStroke();
+    this._setProgress(2);
     document.getElementById('processing-label').textContent = 'Starting…';
 
     try {
       await this.api.process(this.state.sessionId, this.state.timecodes.map(tc => tc.time), {});
     } catch(e) {
-      document.getElementById('processing-label').textContent = 'Error: ' + e.message;
+      this._processingError(e.message);
       return;
     }
+    if (run !== this._procRun) return;
 
-    this.api.connectSSE(this.state.sessionId, msg => {
+    this._procEs = this.api.connectSSE(this.state.sessionId, msg => {
+      if (run !== this._procRun) return;
       if (msg.step === 'complete') {
         this.state.rows = msg.rows;
         this.state.rows.forEach((row, i) => {
@@ -372,67 +380,297 @@ const App = {
         });
         this._initEditScreen();
         this.show('edit');
+        this._autosizeAll();
       } else if (msg.step === 'error') {
-        document.getElementById('processing-label').textContent = 'Error: ' + (msg.error || 'Unknown');
+        this._processingError(msg.error || 'Unknown');
       } else {
-        document.getElementById('processing-progress').style.width = (msg.progress || 0) + '%';
+        this._setProgress(msg.progress || 0);
         document.getElementById('processing-label').textContent = msg.label || '…';
       }
     });
   },
 
-  // ── Screen 4: Edit ────────────────────────────────────────────
-  _initEditScreen() {
-    const editList = document.getElementById('edit-thumb-list');
-    editList.innerHTML = '';
-    this.state.timecodes.forEach((tc, i) => {
-      const item = document.createElement('div'); item.className = 'thumb-item';
-      const num = document.createElement('span'); num.className = 'thumb-num'; num.textContent = i + 1;
-      const wrap = document.createElement('div'); wrap.className = 'thumb-img-wrap';
-      const img = document.createElement('img'); img.src = tc.thumb; img.alt = 'Frame ' + (i+1);
-      wrap.appendChild(img); item.appendChild(num); item.appendChild(wrap);
-      editList.appendChild(item);
-    });
+  _processingError(message) {
+    document.getElementById('processing-card').classList.add('error');
+    document.getElementById('processing-label').textContent = 'Error: ' + message;
+  },
 
+  _cancelProcessing() {
+    this._procRun = (this._procRun || 0) + 1;
+    this._procEs?.close();
+    this._procEs = null;
+    this.show('frames');
+  },
+
+  // Progress is drawn as the card's own border: two strokes start at top-centre and
+  // grow down each side, meeting at bottom-centre. pathLength=100 makes p a true percentage.
+  _setProgress(p) {
+    p = Math.max(0, Math.min(100, p));
+    document.getElementById('stroke-r').style.strokeDasharray = `${p} 100`;
+    document.getElementById('stroke-l').style.strokeDasharray = `${p} 100`;
+    document.getElementById('processing-card').setAttribute('aria-valuenow', Math.round(p));
+  },
+
+  _layoutStroke() {
+    const card = document.getElementById('processing-card');
+    const w = card.offsetWidth, h = card.offsetHeight;
+    if (!w || !h) return;
+    const svg = document.getElementById('processing-stroke');
+    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    const r = 16, i = 1, cx = w / 2;           // card radius; half the 2px border, so the stroke sits on it
+    const x1 = w - i, y1 = h - i;
+    document.getElementById('stroke-r').setAttribute('d',
+      `M${cx},${i} H${x1 - r} A${r},${r} 0 0 1 ${x1},${i + r} V${y1 - r} A${r},${r} 0 0 1 ${x1 - r},${y1} H${cx}`);
+    document.getElementById('stroke-l').setAttribute('d',
+      `M${cx},${i} H${i + r} A${r},${r} 0 0 0 ${i},${i + r} V${y1 - r} A${r},${r} 0 0 0 ${i + r},${y1} H${cx}`);
+  },
+
+  // ── Screen 4: Edit (script sheet) ─────────────────────────────
+  _openIdx: null,   // row whose inspect drawer is open
+
+  _initEditScreen() {
+    this._openIdx = null;
+    this._syncTimecodes();
+    this._renderEdit();
+  },
+
+  // Keep the frame picker's list in step with the review rows.
+  _syncTimecodes() {
+    this.state.timecodes = this.state.rows.map(r => ({
+      time:  r.timecode_seconds,
+      thumb: r.thumbnail_url || r._localThumb || '',
+    }));
+  },
+
+  _renderEdit() {
     const tbody = document.getElementById('storyboard-body');
     tbody.innerHTML = '';
+    const sid = this.state.sessionId;
+
     this.state.rows.forEach((row, i) => {
+      row.row_number = i + 1;
       const thumb  = row.thumbnail_url || row._localThumb || '';
       const supers = Array.isArray(row.supers) ? row.supers.join('\n') : (row.supers || '');
-      const vo     = row.transcript || '';
-      const notes  = row.notes || '';
-      const tc     = this.state.timecodes[i];
-      const tcDisp = row.timecode_display || (tc ? this.formatTC(tc.time) : '');
+      const tcDisp = row.timecode_display || this.formatTC(row.timecode_seconds || 0);
+      const open   = this._openIdx === i;
+      const field  = (key, val, label) =>
+        `<td><textarea rows="1" data-field="${key}" aria-label="${label}, frame ${i + 1}">${this._esc(val)}</textarea></td>`;
 
-      const tr = document.createElement('tr'); tr.dataset.idx = i;
+      const tr = document.createElement('tr');
+      tr.className = 'sheet-row' + (open ? ' open' : '');
+      tr.dataset.idx = i;
       tr.innerHTML = `
-        <td class="td-num">${row.row_number || i+1}</td>
-        <td class="td-thumb">${thumb ? `<img src="${thumb}" alt="">` : `<div style="width:118px;height:66px;background:#111;border-radius:4px;"></div>`}</td>
-        <td class="td-tc">${tcDisp}</td>
-        <td class="td-script">
-          <div class="field-group"><div class="field-label">VO</div><textarea rows="3" data-field="transcript">${this._esc(vo)}</textarea></div>
-          <div class="field-group"><div class="field-label">Super</div><textarea rows="2" data-field="supers">${this._esc(supers)}</textarea></div>
-          <div class="field-group"><div class="field-label">Notes</div><textarea rows="2" data-field="notes">${this._esc(notes)}</textarea></div>
-        </td>`;
+        <td class="td-num"><span class="status-dot${row.status === 'CHECKED' ? ' ok' : ''}"></span><span class="num">${i + 1}</span></td>
+        <td class="td-thumb"><button class="thumb-btn" data-act="toggle" aria-expanded="${open}" aria-label="Inspect frame ${i + 1}">${
+          thumb ? `<img src="${thumb}" alt="">` : '<div class="thumb-ph"></div>'}</button></td>
+        <td class="td-tc" data-act="toggle">${tcDisp}</td>
+        ${field('transcript', row.transcript || '', 'VO')}
+        ${field('supers', supers, 'Super')}
+        ${field('jingle', row.jingle || '', 'Jingle')}
+        ${field('graphics', row.graphics || '', 'Graphics')}
+        ${field('notes', row.notes || '', 'Notes')}`;
       tbody.appendChild(tr);
+
+      if (open) tbody.appendChild(this._buildDrawer(i, sid));
     });
 
-    let saveTimer = null;
-    document.getElementById('edit-main').addEventListener('input', e => {
+    this._updateSummary();
+    this._autosizeAll();
+    if (this._openIdx !== null) this._initDrawerVideo();
+  },
+
+  _segmentOf(i) {
+    const rows  = this.state.rows;
+    const start = rows[i].timecode_seconds || 0;
+    const end   = i + 1 < rows.length ? rows[i + 1].timecode_seconds : (this.state.metadata?.duration || start);
+    return { start, end };
+  },
+
+  _buildDrawer(i, sid) {
+    const row = this.state.rows[i];
+    const { start, end } = this._segmentOf(i);
+    const tr = document.createElement('tr');
+    tr.className = 'drawer-row';
+    tr.innerHTML = `
+      <td colspan="8"><div class="drawer">
+        <video id="drawer-video" src="/video/${sid}" preload="auto" controls></video>
+        <div class="drawer-side">
+          <div class="drawer-seg">Frame ${i + 1} · ${this.formatTC(start)} – ${this.formatTC(end)}</div>
+          <div class="drawer-btns">
+            <button class="bar-btn" data-act="play">▶ Play segment</button>
+            <button class="bar-btn" data-act="check">${row.status === 'CHECKED' ? 'Mark as unchecked' : 'Mark as checked'}</button>
+            <button class="bar-btn" data-act="add" id="drawer-add">+ Add frame at ${this.formatTC(start)}</button>
+            <button class="bar-btn danger" data-act="delete">Delete frame</button>
+            <button class="bar-btn ghost" data-act="close">Close</button>
+          </div>
+          <div class="drawer-err" id="drawer-err" role="status"></div>
+          <p class="drawer-hint">Scrub the video to a moment between the frames, then add a frame there. The new row starts empty.</p>
+        </div>
+      </div></td>`;
+    return tr;
+  },
+
+  _initDrawerVideo() {
+    const video = document.getElementById('drawer-video');
+    if (!video) return;
+    const i = this._openIdx;
+    const { start, end } = this._segmentOf(i);
+    const addBtn = document.getElementById('drawer-add');
+    const seekStart = () => { video.currentTime = start; };
+    if (video.readyState >= 1) seekStart(); else video.addEventListener('loadedmetadata', seekStart, { once: true });
+
+    video.addEventListener('timeupdate', () => {
+      if (!video.paused && end > start && video.currentTime >= end) { video.pause(); video.currentTime = start; }
+      addBtn.textContent = '+ Add frame at ' + this.formatTC(video.currentTime);
+    });
+    video.addEventListener('seeked', () => {
+      addBtn.textContent = '+ Add frame at ' + this.formatTC(video.currentTime);
+    });
+  },
+
+  _updateSummary() {
+    const rows = this.state.rows;
+    const done = rows.filter(r => r.status === 'CHECKED').length;
+    document.getElementById('edit-count').textContent = `${rows.length} frame${rows.length === 1 ? '' : 's'}`;
+    document.getElementById('edit-checked').textContent = `${done} of ${rows.length} checked`;
+  },
+
+  _autosizeAll() {
+    // field-sizing: content handles this in current Chrome/Safari; fall back for the rest.
+    if (CSS.supports('field-sizing', 'content')) return;
+    document.querySelectorAll('#storyboard textarea').forEach(el => {
+      if (!el.scrollHeight) return;
+      el.style.height = 'auto';
+      el.style.height = el.scrollHeight + 2 + 'px';
+    });
+  },
+
+  async _saveNow() {
+    clearTimeout(this._saveTimer);
+    await this.api.saveRows(this.state.sessionId, this.state.rows);
+    const ind = document.getElementById('save-indicator');
+    ind.classList.add('visible');
+    setTimeout(() => ind.classList.remove('visible'), 1800);
+  },
+
+  _drawerError(msg) {
+    const el = document.getElementById('drawer-err');
+    if (el) el.textContent = msg;
+  },
+
+  _toggleDrawer(i) {
+    this._openIdx = this._openIdx === i ? null : i;
+    this._renderEdit();
+    if (this._openIdx !== null) {
+      document.querySelector('.drawer-row')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  },
+
+  async _addFrame() {
+    const video = document.getElementById('drawer-video');
+    if (!video) return;
+    const t = parseFloat(video.currentTime.toFixed(3));
+    this._drawerError('');
+    const r = await fetch(`/api/frame/${this.state.sessionId}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ time: t }),
+    });
+    if (!r.ok) {
+      let m = 'Could not add the frame.';
+      try { m = (await r.json()).detail || m; } catch {}
+      this._drawerError(m);
+      return;
+    }
+    const row = await r.json();
+    this.state.rows.push(row);
+    this.state.rows.sort((a, b) => a.timecode_seconds - b.timecode_seconds);
+    this._openIdx = this.state.rows.indexOf(row);
+    this._syncTimecodes();
+    this._renderEdit();
+    await this._saveNow();
+  },
+
+  async _deleteFrame(i, btn) {
+    if (btn.dataset.armed !== '1') {
+      btn.dataset.armed = '1';
+      btn.textContent = 'Click again to delete';
+      setTimeout(() => { if (btn.isConnected) { btn.dataset.armed = ''; btn.textContent = 'Delete frame'; } }, 4000);
+      return;
+    }
+    this.state.rows.splice(i, 1);
+    this._openIdx = null;
+    this._syncTimecodes();
+    this._renderEdit();
+    await this._saveNow();
+  },
+
+  _toggleChecked(i, btn) {
+    const row = this.state.rows[i];
+    row.status = row.status === 'CHECKED' ? 'PENDING' : 'CHECKED';
+    btn.textContent = row.status === 'CHECKED' ? 'Mark as unchecked' : 'Mark as checked';
+    document.querySelector(`.sheet-row[data-idx="${i}"] .status-dot`)?.classList.toggle('ok', row.status === 'CHECKED');
+    this._updateSummary();
+    this._saveNow();
+  },
+
+  _bindEditScreen() {
+    const main = document.getElementById('edit-main');
+
+    // Field edits: bound once here, so re-entering the screen never stacks handlers.
+    main.addEventListener('input', e => {
       if (e.target.tagName !== 'TEXTAREA') return;
       const idx   = parseInt(e.target.closest('tr[data-idx]').dataset.idx, 10);
       const field = e.target.dataset.field;
       const val   = e.target.value;
-      if (field === 'supers') this.state.rows[idx].supers = val.split('\n').map(s=>s.trim()).filter(Boolean);
+      if (field === 'supers') this.state.rows[idx].supers = val.split('\n').map(s => s.trim()).filter(Boolean);
       else this.state.rows[idx][field] = val;
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(async () => {
-        await this.api.saveRows(this.state.sessionId, this.state.rows);
-        const ind = document.getElementById('save-indicator');
-        ind.classList.add('visible');
-        setTimeout(() => ind.classList.remove('visible'), 1800);
-      }, 800);
+      this._autosizeAll();
+      clearTimeout(this._saveTimer);
+      this._saveTimer = setTimeout(() => this._saveNow(), 800);
     });
+
+    main.addEventListener('click', e => {
+      const el = e.target.closest('[data-act]');
+      if (!el) return;
+      const tr  = el.closest('tr');
+      const idx = tr.classList.contains('drawer-row') ? this._openIdx : parseInt(tr.dataset.idx, 10);
+      switch (el.dataset.act) {
+        case 'toggle': this._toggleDrawer(idx); break;
+        case 'close':  this._toggleDrawer(idx); break;
+        case 'play': {
+          const v = document.getElementById('drawer-video');
+          v.currentTime = this._segmentOf(idx).start; v.play();
+          break;
+        }
+        case 'check':  this._toggleChecked(idx, el); break;
+        case 'add':    this._addFrame(); break;
+        case 'delete': this._deleteFrame(idx, el); break;
+      }
+    });
+
+    new ResizeObserver(() => this._autosizeAll()).observe(main);
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && this._openIdx !== null &&
+          document.getElementById('screen-edit').classList.contains('active')) {
+        this._toggleDrawer(this._openIdx);
+      }
+    });
+
+    // Re-selecting frames re-runs the pipeline and discards every edit, so ask twice.
+    const back = document.getElementById('btn-back-frames');
+    back.onclick = () => {
+      if (back.dataset.armed === '1') {
+        back.dataset.armed = ''; back.classList.remove('armed'); back.textContent = '↩ Re-select frames';
+        this.show('frames');
+        return;
+      }
+      back.dataset.armed = '1'; back.classList.add('armed');
+      back.textContent = 'This discards your edits. Click again';
+      setTimeout(() => {
+        back.dataset.armed = ''; back.classList.remove('armed'); back.textContent = '↩ Re-select frames';
+      }, 4000);
+    };
   },
 
   // ── Init ──────────────────────────────────────────────────────
@@ -526,10 +764,11 @@ const App = {
     };
 
     document.getElementById('btn-next').onclick = () => this._startProcessing();
-    document.getElementById('processing-cancel').onclick = () => this.show('frames');
+    document.getElementById('processing-cancel').onclick = () => this._cancelProcessing();
+    new ResizeObserver(() => this._layoutStroke()).observe(document.getElementById('processing-card'));
 
-    // Edit screen buttons
-    document.getElementById('btn-back-frames').onclick  = () => this.show('frames');
+    // Edit screen
+    this._bindEditScreen();
     document.getElementById('btn-export-docx').onclick  = () => this.api.exportDocx(this.state.sessionId);
     document.getElementById('btn-export-pdf').onclick   = () => this.api.exportPdf(this.state.sessionId);
 

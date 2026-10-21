@@ -140,7 +140,7 @@ def extract_frames_scene_detect(video_path: str, threshold: float, workspace: st
     cmd = [
         "ffmpeg", "-y", "-i", video_path,
         "-vf", filter_str,
-        "-vsync", "vfr",
+        "-fps_mode", "vfr",
         os.path.join(frames_dir, "frame_%04d.jpg")
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -269,6 +269,8 @@ def build_rows(frames: list, transcripts: list, ocr_windows: list = None) -> lis
             "thumbnail_path": frame["filepath"],
             "transcript": transcripts[i] if i < len(transcripts) else "",
             "supers": [],
+            "jingle": "",
+            "graphics": "",
             "notes": "",
             "status": "PENDING",
         })
@@ -389,6 +391,14 @@ def generate_docx(rows: list, metadata: dict, video_filename: str, output_path: 
             _add_run(sup_p, "  |  ".join(row["supers"]))
         else:
             _add_run(sup_p, "(none)")
+
+        # JINGLE / GRAPHICS — only when the user filled them in
+        for label, key in (("JINGLE: ", "jingle"), ("GRAPHICS: ", "graphics")):
+            if row.get(key):
+                script_cell.add_paragraph("")
+                extra_p = script_cell.add_paragraph()
+                _add_run(extra_p, label, bold=True)
+                _add_run(extra_p, row[key])
 
     # --- Save ---
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
