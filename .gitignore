@@ -1,0 +1,13 @@
+# Runtime data (uploaded videos, audio, transcripts, exports)
+workspace/
+output/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local tooling / OS
+.claude/
+.playwright-mcp/
+.DS_Store

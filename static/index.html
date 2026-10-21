@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caddy</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+</head>
+<body>
+
+<input type="file" id="file-input" accept=".mp4,.mov,.mkv,.avi">
+<canvas id="thumb-canvas" style="display:none;"></canvas>
+
+<!-- S1: Select -->
+<div id="screen-select" class="screen active">
+  <div id="drop-card">
+    <div id="drop-card-text">Drop a video here</div>
+    <div id="drop-or">or</div>
+    <button id="btn-select-file">
+      Select <i class="fa-solid fa-upload"></i>
+    </button>
+    <div id="drop-card-subtitle">MP4 FILES ONLY</div>
+  </div>
+</div>
+
+<!-- S2: Frames -->
+<div id="screen-frames" class="screen">
+  <div id="frames-main">
+    <div id="frames-meta">
+      <div class="meta-group">
+        <span class="meta-label">Filename</span>
+        <span class="meta-value" id="meta-filename"></span>
+      </div>
+      <div class="meta-group">
+        <span class="meta-label">Length</span>
+        <span class="meta-value" id="meta-length"></span>
+      </div>
+    </div>
+    <div id="frames-video-wrap">
+      <video id="frames-video" preload="metadata"></video>
+      <div id="video-tc-overlay">00:00:00</div>
+    </div>
+    <div id="frames-controls">
+      <div id="playback-btns">
+        <button class="ctrl-step" id="btn-step-back" title="Step back"><i class="fa-solid fa-backward-step"></i></button>
+        <button id="btn-play-main">
+          <i class="fa-solid fa-play"  id="icon-play"></i>
+          <i class="fa-solid fa-pause" id="icon-pause" style="display:none"></i>
+        </button>
+        <button class="ctrl-step" id="btn-step-fwd" title="Step forward"><i class="fa-solid fa-forward-step"></i></button>
+      </div>
+      <div id="waveform-wrap">
+        <div id="waveform-bars"></div>
+        <div id="playhead"></div>
+      </div>
+      <div id="vol-wrap">
+        <button id="vol-btn">
+          <i class="fa-solid fa-volume-high" id="icon-vol-on"></i>
+          <i class="fa-solid fa-volume-xmark" id="icon-vol-off" style="display:none"></i>
+        </button>
+      </div>
+    </div>
+    <div id="frames-action">
+      <button id="btn-add-remove" class="action-pill add">
+        <span id="add-remove-icon">+</span>
+        <span id="add-remove-text">Add frame</span>
+      </button>
+    </div>
+  </div>
+  <div id="frames-sidebar">
+    <div id="thumb-list"></div>
+    <div id="sidebar-fade"></div>
+    <div id="frames-sidebar-bottom">
+      <button id="btn-next" disabled>Next</button>
+    </div>
+  </div>
+</div>
+
+<!-- S3: Processing -->
+<div id="screen-processing" class="screen">
+  <div id="processing-card">
+    <div id="processing-progress"></div>
+    <div id="processing-title">Processing</div>
+    <div id="processing-label">Starting…</div>
+    <div id="processing-cancel">CANCEL</div>
+  </div>
+</div>
+
+<!-- S4: Edit -->
+<div id="screen-edit" class="screen">
+  <div id="edit-sidebar">
+    <div id="edit-thumb-list"></div>
+    <div id="edit-sidebar-actions">
+      <button class="side-btn ghost" id="btn-back-frames">↩ Re-select Frames</button>
+      <button class="side-btn primary" id="btn-export-docx">Export DOCX</button>
+      <button class="side-btn primary" id="btn-export-pdf">Export PDF</button>
+    </div>
+  </div>
+  <div id="edit-main">
+    <table id="storyboard">
+      <thead>
+        <tr><th>#</th><th>Frame</th><th>TC</th><th>Script</th></tr>
+      </thead>
+      <tbody id="storyboard-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="save-indicator">Saved</div>
+
+<script>
+const App = {
+  state: {
+    sessionId: null,
+    metadata:  null,
+    filename:  '',
+    timecodes: [],   // [{time, thumb}]
+    rows:      [],
+  },
+
+  _wvN:    0,
+  _wvDur:  0,
+  _thresh: 0.12,
+
+  // ── Utilities ──────────────────────────────────────────────────
+  formatTC(s) {
+    s = Math.floor(s);
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+  },
+
+  formatOverlayTC(t) {
+    const fps = this.state.metadata?.fps || 25;
+    const totalFrames = Math.floor(t * fps);
+    const ff = totalFrames % Math.round(fps);
+    const totalSecs = Math.floor(totalFrames / Math.round(fps));
+    const ss = totalSecs % 60;
+    const mm = Math.floor(totalSecs / 60);
+    return `${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}:${String(ff).padStart(2,'0')}`;
+  },
+
+  _esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  },
+
+  show(name) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('screen-' + name).classList.add('active');
+  },
+
+  // ── API ────────────────────────────────────────────────────────
+  api: {
+    async upload(file) {
+      const fd = new FormData(); fd.append('file', file);
+      const r = await fetch('/api/upload', { method: 'POST', body: fd });
+      if (!r.ok) { let m = 'Upload failed'; try { m = (await r.json()).detail || m; } catch {} throw new Error(m); }
+      return r.json();
+    },
+    async pollAutoFrames(sessionId) {
+      for (let i = 0; i < 120; i++) {
+        const r = await fetch(`/api/auto-frames/${sessionId}`);
+        const data = await r.json();
+        if (data.ready) return data.frames;
+        await new Promise(res => setTimeout(res, 500));
+      }
+      return [];
+    },
+    async process(sessionId, timecodes, options) {
+      const r = await fetch('/api/process', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, timecodes, options }),
+      });
+      if (!r.ok) throw new Error((await r.json()).detail || 'Process failed');
+      return r.json();
+    },
+    connectSSE(sessionId, onMsg) {
+      const es = new EventSource(`/api/progress/${sessionId}`);
+      es.onmessage = e => {
+        const msg = JSON.parse(e.data);
+        if (!msg.ping) onMsg(msg);
+        if (msg.step === 'complete' || msg.step === 'error') es.close();
+      };
+      return es;
+    },
+    async saveRows(sessionId, rows) {
+      await fetch(`/api/rows/${sessionId}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows }),
+      });
+    },
+    exportDocx(id) { window.location.href = `/api/export/docx/${id}`; },
+    exportPdf(id)  { window.location.href = `/api/export/pdf/${id}`; },
+  },
+
+  // ── Screen 1: Select ──────────────────────────────────────────
+  _initSelect() {
+    const card = document.getElementById('drop-card');
+    const fi   = document.getElementById('file-input');
+    const btn  = document.getElementById('btn-select-file');
+
+    btn.addEventListener('click', e => { e.stopPropagation(); fi.click(); });
+    card.addEventListener('click', () => fi.click());
+    fi.addEventListener('change', e => e.target.files[0] && this._upload(e.target.files[0]));
+
+    card.addEventListener('dragover',  e => { e.preventDefault(); card.classList.add('drag-over'); });
+    card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+    card.addEventListener('drop', e => {
+      e.preventDefault(); card.classList.remove('drag-over');
+      const f = e.dataTransfer.files[0]; if (f) this._upload(f);
+    });
+  },
+
+  async _upload(file) {
+    const txt = document.getElementById('drop-card-text');
+    txt.textContent = 'Uploading…';
+    try {
+      const data = await this.api.upload(file);
+      this.state.sessionId = data.session_id;
+      this.state.metadata  = data.metadata;
+      this.state.filename  = data.filename;
+      this.state.timecodes = [];
+      this._setupFrameScreen(data);
+      this.show('frames');
+      this.api.pollAutoFrames(data.session_id).then(frames => {
+        if (frames.length && this.state.timecodes.length === 0) {
+          this.state.timecodes = frames.map(f => ({ time: f.time, thumb: f.thumbnail_url }));
+          this.state.timecodes.sort((a, b) => a.time - b.time);
+          this._renderThumbList();
+          this._updateWaveform(document.getElementById('frames-video').currentTime || 0);
+          this._updateActionBtn(document.getElementById('frames-video').currentTime || 0);
+          document.getElementById('btn-next').disabled = false;
+        }
+      });
+    } catch(e) {
+      txt.textContent = e.message;
+      setTimeout(() => { txt.textContent = 'Drop a file here'; }, 3000);
+    }
+    document.getElementById('file-input').value = '';
+  },
+
+  // ── Screen 2: Frames ──────────────────────────────────────────
+  _setupFrameScreen(data) {
+    const video = document.getElementById('frames-video');
+    video.src = `/video/${data.session_id}`;
+    document.getElementById('meta-filename').textContent = data.filename;
+    document.getElementById('meta-length').textContent   = this.formatTC(data.metadata.duration || 0);
+    document.getElementById('btn-next').disabled = true;
+    this._renderThumbList();
+  },
+
+  _buildWaveform() {
+    const c = document.getElementById('waveform-bars');
+    const pillW = 5, gap = 3;
+    this._wvN = Math.max(10, Math.floor((c.offsetWidth + gap) / (pillW + gap)));
+    c.innerHTML = '';
+    for (let i = 0; i < this._wvN; i++) {
+      const b = document.createElement('div');
+      b.className = 'wv-bar';
+      b.style.background = 'var(--muted)';
+      c.appendChild(b);
+    }
+    this._updateWaveform(document.getElementById('frames-video').currentTime || 0);
+  },
+
+  _updateWaveform(t) {
+    const c    = document.getElementById('waveform-bars');
+    const bars = c.children;
+    const dur  = this._wvDur || 1;
+    const pct  = t / dur;
+    const n    = bars.length;
+
+    const ww = document.getElementById('waveform-wrap');
+    const ph = document.getElementById('playhead');
+    ph.style.left = (pct * ww.offsetWidth) + 'px';
+
+    const atSelected = this._findTCIdx(t) >= 0;
+    ph.style.background = atSelected ? 'var(--amber)' : 'var(--red)';
+
+    const selBars = new Set(this.state.timecodes.map(tc => Math.min(n - 1, Math.floor(tc.time / dur * n))));
+    for (let i = 0; i < n; i++) {
+      const barPct = i / n;
+      bars[i].style.background = selBars.has(i) ? 'var(--amber)' : barPct < pct ? '#fff' : 'var(--muted)';
+    }
+  },
+
+  _findTCIdx(t) {
+    return this.state.timecodes.findIndex(tc => Math.abs(tc.time - t) < this._thresh);
+  },
+
+  _updateActionBtn(t) {
+    const isSel = this._findTCIdx(t) >= 0;
+    const btn   = document.getElementById('btn-add-remove');
+    document.getElementById('add-remove-icon').textContent = isSel ? '−' : '+';
+    document.getElementById('add-remove-text').textContent = isSel ? 'Remove frame' : 'Add frame';
+    btn.className = 'action-pill ' + (isSel ? 'remove' : 'add');
+  },
+
+  _captureFrame(video) {
+    const c = document.getElementById('thumb-canvas');
+    c.width  = video.videoWidth  || 320;
+    c.height = video.videoHeight || 180;
+    c.getContext('2d').drawImage(video, 0, 0);
+    return c.toDataURL('image/jpeg', 0.75);
+  },
+
+  _updateSidebarFade() {
+    const list = document.getElementById('thumb-list');
+    const fade = document.getElementById('sidebar-fade');
+    const hasMore = list.scrollTop + list.clientHeight < list.scrollHeight - 2;
+    fade.classList.toggle('hidden', !hasMore);
+  },
+
+  _renderThumbList() {
+    const list = document.getElementById('thumb-list');
+    list.innerHTML = '';
+    if (this.state.timecodes.length === 0) {
+      list.innerHTML = '<span class="no-frames-msg">No frames selected yet.</span>';
+      this._updateSidebarFade();
+      return;
+    }
+    this.state.timecodes.forEach((tc, i) => {
+      const item = document.createElement('div');
+      item.className = 'thumb-item';
+      const num = document.createElement('span');
+      num.className = 'thumb-num';
+      num.textContent = i + 1;
+      const wrap = document.createElement('div');
+      wrap.className = 'thumb-img-wrap';
+      const img = document.createElement('img');
+      img.src = tc.thumb; img.alt = 'Frame ' + (i+1);
+      wrap.style.cursor = 'pointer';
+      wrap.addEventListener('click', () => {
+        const video = document.getElementById('frames-video');
+        video.currentTime = tc.time;
+      });
+      wrap.appendChild(img); item.appendChild(num); item.appendChild(wrap);
+      list.appendChild(item);
+    });
+    this._updateSidebarFade();
+  },
+
+  _highlightThumb(t) {
+    document.querySelectorAll('#thumb-list .thumb-img-wrap').forEach((wrap, i) => {
+      const tc = this.state.timecodes[i];
+      wrap.classList.toggle('at-time', !!(tc && Math.abs(tc.time - t) < this._thresh));
+    });
+  },
+
+  // ── Screen 3: Processing ──────────────────────────────────────
+  async _startProcessing() {
+    this.show('processing');
+    document.getElementById('processing-progress').style.width = '5%';
+    document.getElementById('processing-label').textContent = 'Starting…';
+
+    try {
+      await this.api.process(this.state.sessionId, this.state.timecodes.map(tc => tc.time), {});
+    } catch(e) {
+      document.getElementById('processing-label').textContent = 'Error: ' + e.message;
+      return;
+    }
+
+    this.api.connectSSE(this.state.sessionId, msg => {
+      if (msg.step === 'complete') {
+        this.state.rows = msg.rows;
+        this.state.rows.forEach((row, i) => {
+          row._localThumb = this.state.timecodes[i]?.thumb || '';
+          if (row.thumbnail_path) {
+            const fname = row.thumbnail_path.split('/').pop();
+            row.thumbnail_url = `/thumbs/${this.state.sessionId}/${fname}`;
+          }
+        });
+        this._initEditScreen();
+        this.show('edit');
+      } else if (msg.step === 'error') {
+        document.getElementById('processing-label').textContent = 'Error: ' + (msg.error || 'Unknown');
+      } else {
+        document.getElementById('processing-progress').style.width = (msg.progress || 0) + '%';
+        document.getElementById('processing-label').textContent = msg.label || '…';
+      }
+    });
+  },
+
+  // ── Screen 4: Edit ────────────────────────────────────────────
+  _initEditScreen() {
+    const editList = document.getElementById('edit-thumb-list');
+    editList.innerHTML = '';
+    this.state.timecodes.forEach((tc, i) => {
+      const item = document.createElement('div'); item.className = 'thumb-item';
+      const num = document.createElement('span'); num.className = 'thumb-num'; num.textContent = i + 1;
+      const wrap = document.createElement('div'); wrap.className = 'thumb-img-wrap';
+      const img = document.createElement('img'); img.src = tc.thumb; img.alt = 'Frame ' + (i+1);
+      wrap.appendChild(img); item.appendChild(num); item.appendChild(wrap);
+      editList.appendChild(item);
+    });
+
+    const tbody = document.getElementById('storyboard-body');
+    tbody.innerHTML = '';
+    this.state.rows.forEach((row, i) => {
+      const thumb  = row.thumbnail_url || row._localThumb || '';
+      const supers = Array.isArray(row.supers) ? row.supers.join('\n') : (row.supers || '');
+      const vo     = row.transcript || '';
+      const notes  = row.notes || '';
+      const tc     = this.state.timecodes[i];
+      const tcDisp = row.timecode_display || (tc ? this.formatTC(tc.time) : '');
+
+      const tr = document.createElement('tr'); tr.dataset.idx = i;
+      tr.innerHTML = `
+        <td class="td-num">${row.row_number || i+1}</td>
+        <td class="td-thumb">${thumb ? `<img src="${thumb}" alt="">` : `<div style="width:118px;height:66px;background:#111;border-radius:4px;"></div>`}</td>
+        <td class="td-tc">${tcDisp}</td>
+        <td class="td-script">
+          <div class="field-group"><div class="field-label">VO</div><textarea rows="3" data-field="transcript">${this._esc(vo)}</textarea></div>
+          <div class="field-group"><div class="field-label">Super</div><textarea rows="2" data-field="supers">${this._esc(supers)}</textarea></div>
+          <div class="field-group"><div class="field-label">Notes</div><textarea rows="2" data-field="notes">${this._esc(notes)}</textarea></div>
+        </td>`;
+      tbody.appendChild(tr);
+    });
+
+    let saveTimer = null;
+    document.getElementById('edit-main').addEventListener('input', e => {
+      if (e.target.tagName !== 'TEXTAREA') return;
+      const idx   = parseInt(e.target.closest('tr[data-idx]').dataset.idx, 10);
+      const field = e.target.dataset.field;
+      const val   = e.target.value;
+      if (field === 'supers') this.state.rows[idx].supers = val.split('\n').map(s=>s.trim()).filter(Boolean);
+      else this.state.rows[idx][field] = val;
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(async () => {
+        await this.api.saveRows(this.state.sessionId, this.state.rows);
+        const ind = document.getElementById('save-indicator');
+        ind.classList.add('visible');
+        setTimeout(() => ind.classList.remove('visible'), 1800);
+      }, 800);
+    });
+  },
+
+  // ── Init ──────────────────────────────────────────────────────
+  init() {
+    this._initSelect();
+
+    // Frame screen — bind all listeners once
+    const video = document.getElementById('frames-video');
+
+    video.addEventListener('loadedmetadata', () => {
+      this._wvDur = video.duration;
+      this._buildWaveform();
+    });
+
+    new ResizeObserver(() => { if (this._wvDur) this._buildWaveform(); })
+      .observe(document.getElementById('waveform-bars'));
+
+    document.getElementById('thumb-list').addEventListener('scroll', () => this._updateSidebarFade());
+    new ResizeObserver(() => this._updateSidebarFade()).observe(document.getElementById('thumb-list'));
+
+    video.addEventListener('timeupdate', () => {
+      const t = video.currentTime;
+      document.getElementById('video-tc-overlay').textContent = this.formatOverlayTC(t);
+      this._updateWaveform(t);
+      this._updateActionBtn(t);
+      this._highlightThumb(t);
+    });
+
+    const setPlayIcon = playing => {
+      document.getElementById('icon-play').style.display  = playing ? 'none' : '';
+      document.getElementById('icon-pause').style.display = playing ? '' : 'none';
+    };
+
+    video.addEventListener('ended', () => setPlayIcon(false));
+
+    document.getElementById('btn-play-main').onclick = () => {
+      if (video.paused) { video.play(); setPlayIcon(true); }
+      else              { video.pause(); setPlayIcon(false); }
+    };
+
+    document.getElementById('btn-step-back').onclick = () => { video.currentTime = Math.max(0, video.currentTime - 1); };
+    document.getElementById('btn-step-fwd').onclick  = () => { video.currentTime = Math.min(video.duration || 0, video.currentTime + 1); };
+
+    document.addEventListener('keydown', e => {
+      if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+      const fps = this.state.metadata?.fps || 25;
+      if (e.key === 'ArrowLeft')  { e.preventDefault(); video.currentTime = Math.max(0, video.currentTime - 1 / fps); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); video.currentTime = Math.min(video.duration || 0, video.currentTime + 1 / fps); }
+    });
+
+    document.getElementById('vol-btn').onclick = () => {
+      video.muted = !video.muted;
+      document.getElementById('icon-vol-on').style.display  = video.muted ? 'none' : '';
+      document.getElementById('icon-vol-off').style.display = video.muted ? '' : 'none';
+    };
+
+    // Waveform seek
+    const ww = document.getElementById('waveform-wrap');
+    let seeking = false;
+    let _seekRaf = null;
+    const seekTo = e => {
+      const rect = ww.getBoundingClientRect();
+      const t = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * (this._wvDur || 0);
+      // Update UI immediately — don't wait for timeupdate
+      document.getElementById('video-tc-overlay').textContent = this.formatOverlayTC(t);
+      this._updateWaveform(t);
+      this._updateActionBtn(t);
+      this._highlightThumb(t);
+      // Throttle actual video seek to one per animation frame
+      if (_seekRaf) cancelAnimationFrame(_seekRaf);
+      _seekRaf = requestAnimationFrame(() => { video.currentTime = t; _seekRaf = null; });
+    };
+    ww.addEventListener('mousedown', e => { seeking = true; seekTo(e); });
+    window.addEventListener('mousemove', e => { if (seeking) seekTo(e); });
+    window.addEventListener('mouseup',  () => { seeking = false; });
+
+    // Add/Remove frame
+    document.getElementById('btn-add-remove').onclick = () => {
+      const t   = parseFloat(video.currentTime.toFixed(3));
+      const idx = this._findTCIdx(t);
+      if (idx >= 0) {
+        this.state.timecodes.splice(idx, 1);
+      } else {
+        this.state.timecodes.push({ time: t, thumb: this._captureFrame(video) });
+        this.state.timecodes.sort((a,b) => a.time - b.time);
+      }
+      this._renderThumbList();
+      this._updateWaveform(t);
+      this._updateActionBtn(t);
+      document.getElementById('btn-next').disabled = this.state.timecodes.length === 0;
+    };
+
+    document.getElementById('btn-next').onclick = () => this._startProcessing();
+    document.getElementById('processing-cancel').onclick = () => this.show('frames');
+
+    // Edit screen buttons
+    document.getElementById('btn-back-frames').onclick  = () => this.show('frames');
+    document.getElementById('btn-export-docx').onclick  = () => this.api.exportDocx(this.state.sessionId);
+    document.getElementById('btn-export-pdf').onclick   = () => this.api.exportPdf(this.state.sessionId);
+
+  },
+};
+
+App.init();
+</script>
+</body>
+</html>
