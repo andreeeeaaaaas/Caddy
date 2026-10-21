@@ -1,8 +1,8 @@
 # Caddy
 
-> A local tool that turns a finished ad into an editable CAD script, for the brand and creative team.
+> A native macOS app that turns a finished ad into an editable CAD script, for the brand and creative team.
 
-**Status:** Building
+**Status:** Rebuilding as a native macOS app (the Python web app is the reference build)
 **Last updated:** 2026-10-21
 
 ## How to use this document
@@ -36,91 +36,139 @@ The brand and creative team at frog, who prepare ads for air. Roles using it
 day to day (producer, editor, etc.) are not yet confirmed.
 
 **What it does**
-Takes a finished video, proposes frames at scene changes, transcribes the audio
-locally, and presents everything in an editable table. The user adds or removes
-frames, edits voiceover, supers, jingles and notes, then exports a Word or PDF
-document.
+The user drops a finished video into Caddy. It proposes frames at scene changes,
+transcribes the audio on the device, and fills an editable script sheet while it
+works. The user accepts or removes frames, adds frames from the timeline, edits
+voiceover, supers, jingles, graphics and notes, then exports a Word or PDF
+document. Each ad is saved as a Caddy document that can be reopened later.
 
 **Why not the existing option**
-The existing option is the manual process above. Replacing it with a local tool
-keeps unreleased ad assets on the team's own machines.
+The existing option is the manual process above. A local app keeps unreleased ad
+assets on the team's own machines. The Python web app proved the pipeline, but it
+can't be handed around the office: it needs Python, Homebrew ffmpeg and a
+terminal script, and runs as a browser tab on port 8000.
 
 **Done means**
-A user uploads a finished video, gets suggested frames and a transcript, edits the
-rows, and exports a Word document the team can send as-is, in noticeably less
-time than the current manual process. The exact time target and export template
-are open (see section 5).
+A colleague installs Caddy from a zip with no other setup, drops in a finished
+video, gets suggested frames and a transcript, edits the rows, and exports a Word
+document the team can send as-is, in noticeably less time than the current manual
+process. The exact time target and export template are open (see section 6).
 
 **Scope**
-- Video upload and metadata check
-- Auto-suggested frames at scene changes
-- Manual frame selection by timecode
-- Add and delete frames
-- Local audio transcription aligned to frames
-- Editable rows: voiceover, supers, notes
-- Jingle and graphics fields per row
+- Signed, notarized app distributed as a zip, no runtime dependencies
+- Document-based app: one `.caddy` document per ad, save and reopen
+- Drop or open a video, with a metadata check
+- Auto-suggested frames at scene changes, shown as suggestions to accept or reject
+- Add a frame at the playhead, delete frames
+- On-device transcription aligned to frames
+- On-screen text read on the device and suggested as supers
+- Editable rows: voiceover, supers, jingle, graphics, notes
+- Inspector: full-size frame, segment playback, mark as checked
 - Word (DOCX) export
 - PDF export
 
 ---
 
-## 2. Locked Choices
+## 2. Flow
 
-| Layer | Choice | Notes |
-|---|---|---|
-| Language | Python 3.10+ | |
-| Framework | FastAPI + uvicorn | Local web server, `http://localhost:8000` |
-| Styling | Plain HTML/CSS in `static/` | No front-end framework |
-| Data / DB | Filesystem, `workspace/{session_id}/` | In-memory session state, no database |
-| Media | ffmpeg and ffprobe | Frame extraction, audio, scene detection |
-| Transcription | faster-whisper | Local only, base model by default |
-| Export | python-docx (DOCX), ReportLab (PDF) | |
-| Hosting | Local macOS, `launch.sh` | |
-| Package manager | pip, `requirements.txt` | |
+One document window per ad. There are no separate upload, select and processing
+screens; work appears in the window as it completes.
 
-**Pinned versions**
-Python 3.10 minimum. `launch.sh` currently hardcodes the Python 3.13 framework path.
+1. **Start.** A launch window offers "Open video…", a drop target and recent
+   documents. Dropping a video creates a new untitled document.
+2. **Analyse.** The document window opens straight away with the video loaded.
+   Analysis runs in the background with progress in the toolbar: scene markers
+   appear on the timeline and suggested rows fill the sheet as they're found,
+   then voiceover fills in as transcription finishes. The user can start editing
+   before analysis ends.
+3. **Review.** The window has three areas:
+   - **Script sheet** (centre): one row per frame with thumbnail, timecode, VO,
+     super, jingle, graphics and notes. Suggested rows are visibly marked until
+     accepted (Return) or removed (Delete).
+   - **Inspector** (right): the selected row's full-size frame, a player for
+     that row's segment, status (Pending, Checked) and the row's fields.
+   - **Timeline** (bottom): filmstrip of the whole ad with playhead and a marker
+     per row. "Add frame" (⌘F or the toolbar) inserts a row at the playhead.
+4. **Export.** A sheet chooses DOCX or PDF, the template, and whether to include
+   unchecked rows, with a preview, then saves the file.
+
+Generated text (transcript, suggested frames) stays marked as a draft until the
+user edits or accepts it.
 
 ---
 
-## 3. Rules
+## 3. Locked Choices
+
+| Layer | Choice | Notes |
+|---|---|---|
+| Language | Swift 6 | Default actor isolation `MainActor`, as in Stems |
+| UI | SwiftUI | AppKit only where SwiftUI falls short (e.g. the timeline) |
+| App model | `DocumentGroup` with a `.caddy` package | Rows as JSON, frames as JPEG, transcript cache |
+| Media | AVFoundation | Metadata, frame grabs (`AVAssetImageGenerator`), audio, playback |
+| Scene detection | `AVAssetReader` frames scored with vImage | Block-based sudden-change score, catches supers as well as cuts. ffmpeg's scene score missed every event in the test ad at the Python app's 0.3 threshold |
+| Transcription | Speech framework `SpeechAnalyzer` / `SpeechTranscriber` | On device. Language assets come from Apple, no ad data leaves the Mac |
+| Supers | Vision `RecognizeTextRequest` | On device. Draft text; in-scene signage is read too |
+| Export | DOCX: OOXML written from a template and zipped. PDF: Core Graphics / PDFKit | |
+| Platform | macOS 26.2+, Apple silicon | Pending office hardware check (section 6) |
+| Distribution | Developer ID signed, hardened runtime, notarized, zipped | Team `TZSHUKU49X`, not sandboxed, not the Mac App Store |
+| Project | Xcode project, Swift Package Manager | |
+
+**Reference build**
+The Python app (`app.py`, `pipeline.py`, `storyboard.py`, `static/`) stays in the
+repo, unchanged, as the reference for pipeline behaviour and for comparing scene
+detection, transcription and exports.
+
+---
+
+## 4. Rules
 
 **Always**
 - Process video, audio and transcripts locally on the user's machine.
 - Keep every exported field editable by the user before export.
 - Keep `CLAUDE.md` and `AGENTS.md` in step with this document when architecture changes.
+- Run analysis off the main thread and show results as they arrive.
+- Use light and dark colour tokens; never hardcode colours in views.
 
 **Never**
 - Call a cloud or third-party API with ad assets, audio, frames or transcripts.
-- Install a dependency without asking.
-- Commit `workspace/` or `output/` (uploaded videos and generated exports).
+- Add a Swift package or other dependency without asking.
+- Bundle a command-line tool (ffmpeg, Python) or require Homebrew.
+- Commit test videos, `workspace/`, `output/` or exported documents.
 - Present machine-generated text as final; it is a draft until the user edits or accepts it.
 
 **Patterns**
-- Long jobs run in a background thread and report progress to the UI through SSE.
-- Edited rows are saved back through `POST /api/rows/{session_id}`.
+- Long jobs are Swift concurrency tasks that can be cancelled, owned by the document.
+- The document is the single source of truth; edits go through it so undo and autosave work.
+- Video files are referenced from the document, not copied in (see section 6).
 
 ---
 
-## 4. Not Doing
+## 5. Not Doing
 
-**Non-goals** — product direction this deliberately excludes
+**Non-goals**: product direction this deliberately excludes
 - Not an automatic frame-describing bot. v1 is an editor with suggested frames, not a tool that writes about what changed between frames.
 - Not a hosted or multi-user product.
+- Not cross-platform. No Windows or web build.
 
-**Out of scope** — not in this build, may come later
+**Out of scope**: not in this build, may come later
 - Local vision-model descriptions of frames.
-- Command-line use. `storyboard.py` keeps a legacy CLI, but the web app is the product.
+- Auto-updates (Sparkle).
+- Command-line use.
+- New features in the Python web app; it is reference only.
 
 ---
 
-## 5. Open Questions
+## 6. Open Questions
 
 Flag and pause on these. Do not assume an answer.
 
+- [ ] Are all office Macs Apple silicon on macOS 26? If not, the platform floor and the transcription choice (WhisperKit instead of SpeechTranscriber) change.
+- [ ] Is SpeechTranscriber accurate enough on ad voiceover compared with faster-whisper? Spike on 3 or 4 real ads before building on it.
+- [ ] Should a `.caddy` document reference the video (small, breaks if the video moves) or copy it in (portable, large)? Currently: reference.
+- [ ] AVFoundation can't read MKV or AVI, which the Python app accepted. Are those formats used, or is MP4/MOV enough?
 - [ ] What is the time target? The manual process takes about 20 minutes per 1 minute video; what counts as good enough?
 - [ ] Can a script be uploaded alongside the video and used for alignment instead of transcription? The original brief says yes; the app does not do this yet.
-- [ ] Should on-screen supers and disclaimers be detected with OCR? The original CLI did this; the web app dropped it.
+- [ ] Should in-scene text (signage, packaging) be filtered out of suggested supers, or is removing it by hand acceptable?
 - [ ] Is there a team Word template the export must match?
 - [ ] Are substantiation documents in scope for v1 (attached, referenced, or generated)?
 - [ ] How is accuracy measured? Suggest comparing output against one real ad with a hand-made CAD script.
