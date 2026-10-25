@@ -2,8 +2,9 @@ import AVFoundation
 import Observation
 import SwiftUI
 
-/// Runs scene detection and transcription for one document, writing suggested
-/// rows and their VO into the script as results arrive.
+/// Runs scene detection, on-screen text reading and transcription for one
+/// document, writing detected sections, then suggested supers and voiceover into the script
+/// as results arrive.
 @Observable
 final class Analyzer {
     enum Phase: Equatable {
@@ -114,18 +115,18 @@ final class Analyzer {
         }
     }
 
-    /// Replaces the suggested rows with the frames detected at the current
-    /// sensitivity. Rows the user has accepted or added are kept.
+    /// Replaces the detected sections with the cuts found at the current
+    /// sensitivity. Sections the user has added or written in are kept.
     private func suggest(from scores: [SceneScore], script: Binding<Script>) {
         let threshold = SceneDetector.threshold(forSensitivity: script.wrappedValue.sensitivity)
         let times = SceneDetector.suggestions(from: scores, threshold: threshold)
         let current = script.wrappedValue.rows
-        let kept = current.filter { $0.status != .suggested }
-        let suggested = current.filter { $0.status == .suggested }
+        let kept = current.filter { $0.status != .detected || $0.elements.contains { !$0.isSuggested } }
+        let detected = current.filter { $0.status == .detected }
 
         var rows = kept
         for time in times where !kept.contains(where: { abs($0.time - time) < 0.3 }) {
-            rows.append(suggested.first { abs($0.time - time) < 0.001 } ?? ScriptRow(time: time, status: .suggested))
+            rows.append(detected.first { abs($0.time - time) < 0.001 } ?? ScriptRow(time: time, status: .detected))
         }
         rows.sort { $0.time < $1.time }
         rows = aligned(rows, script: script.wrappedValue)
@@ -137,24 +138,31 @@ final class Analyzer {
         if rows != script.wrappedValue.rows { script.wrappedValue.rows = rows }
     }
 
-    /// Fills suggested rows' VO and supers. Accepted rows keep theirs, since
-    /// the user may have edited them.
+    /// Suggests each section's voiceover, supers and disclaimers. Elements the user has
+    /// accepted or written are kept, and suggestions update as results arrive.
     private func aligned(_ rows: [ScriptRow], script: Script) -> [ScriptRow] {
-        var rows = alignedVoiceover(rows, words: script.transcript)
+        var rows = rows
+        if let words = script.transcript, !words.isEmpty {
+            let lines = voiceover(for: rows, words: words)
+            for i in rows.indices {
+                rows[i].suggest([lines[i]], kind: .voiceover, source: .audio, exclusive: true)
+            }
+        }
         if let samples = script.screenText, !samples.isEmpty {
             let supers = ScreenTextReader.supers(for: rows.map(\.time), from: samples)
-            for i in rows.indices where rows[i].status == .suggested {
-                rows[i].supers = supers[i]
+            for i in rows.indices {
+                let lines = supers[i].split(separator: "\n").map(String.init)
+                rows[i].suggest(lines.filter { !ScreenTextReader.isDisclaimer($0) }, kind: .superText, source: .screen)
+                rows[i].suggest(lines.filter(ScreenTextReader.isDisclaimer), kind: .disclaimer, source: .screen)
             }
         }
         return rows
     }
 
-    /// Gives each sentence to the row whose frame it overlaps most, so VO is
-    /// never split mid-sentence. Accepted rows keep their VO, since the user
-    /// may have edited it; sentences that land on them aren't repeated.
-    private func alignedVoiceover(_ rows: [ScriptRow], words: [TranscriptWord]?) -> [ScriptRow] {
-        guard let words, !words.isEmpty, !rows.isEmpty else { return rows }
+    /// Gives each sentence to the section whose time it overlaps most, so
+    /// voiceover is never split mid-sentence.
+    private func voiceover(for rows: [ScriptRow], words: [TranscriptWord]) -> [String] {
+        guard !rows.isEmpty else { return [] }
         var lines = Array(repeating: [String](), count: rows.count)
         for sentence in VoiceoverTranscriber.sentences(from: words) {
             var best = 0
@@ -170,10 +178,6 @@ final class Analyzer {
             }
             lines[best].append(sentence.text)
         }
-        var rows = rows
-        for i in rows.indices where rows[i].status == .suggested {
-            rows[i].vo = lines[i].joined(separator: " ")
-        }
-        return rows
+        return lines.map { $0.joined(separator: " ") }
     }
 }

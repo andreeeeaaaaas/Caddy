@@ -1,19 +1,18 @@
 import AVKit
 import SwiftUI
 
-/// The selected row: frame, segment playback, status and every field.
+/// The selected section: frame, segment playback and a field per element kind.
 struct InspectorView: View {
     @Binding var row: ScriptRow
     let number: Int
     let segmentEnd: Double
     let playback: Playback
-    let onRemove: () -> Void
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("Frame \(number)")
+                    Text("Section \(number)")
                         .font(.headline)
                     Text(Timecode.short(row.time))
                         .font(.callout.monospacedDigit())
@@ -35,26 +34,9 @@ struct InspectorView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if row.status == .suggested {
-                    HStack {
-                        Button("Accept") { row.status = .pending }
-                            .buttonStyle(.borderedProminent)
-                        Button("Remove", role: .destructive, action: onRemove)
-                    }
-                } else {
-                    Picker("Status", selection: $row.status) {
-                        Text("Pending").tag(ScriptRow.Status.pending)
-                        Text("Checked").tag(ScriptRow.Status.checked)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
+                ForEach(ScriptElement.Kind.allCases, id: \.self) { kind in
+                    field(kind.title, text: Binding { row.text(kind) } set: { row.setText(kind, $0) })
                 }
-
-                field("VO", text: $row.vo)
-                field("Super", text: $row.supers)
-                field("Jingle", text: $row.jingle)
-                field("Graphics", text: $row.graphics)
-                field("Notes", text: $row.notes)
             }
             .padding(16)
         }
@@ -79,11 +61,19 @@ struct InspectorView: View {
 /// at launch with the Xcode 27.1 SDK, so this wraps the AppKit view instead.
 struct PlayerView: NSViewRepresentable {
     let player: AVPlayer
+    var showsControls = true
+    /// Without controls the video fills the view unless told otherwise.
+    var gravity: AVLayerVideoGravity = .resizeAspectFill
 
     func makeNSView(context: Context) -> AVPlayerView {
         let view = AVPlayerView()
-        view.controlsStyle = .inline
-        view.showsFullScreenToggleButton = true
+        if showsControls {
+            view.controlsStyle = .inline
+            view.showsFullScreenToggleButton = true
+        } else {
+            view.controlsStyle = .none
+            view.videoGravity = gravity
+        }
         view.player = player
         return view
     }

@@ -16,3 +16,6 @@ __pycache__/
 xcuserdata/
 DerivedData/
 build/
+
+# Test ads (copyrighted, local only)
+Caddy test ads/

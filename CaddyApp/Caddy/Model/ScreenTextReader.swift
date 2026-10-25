@@ -166,6 +166,31 @@ nonisolated enum ScreenTextReader {
         }
     }
 
+    /// Fine print that reads like a disclaimer rather than a super: offer
+    /// terms, T&Cs, finance, footnotes, legal lines, or anything long.
+    static func isDisclaimer(_ text: String) -> Bool {
+        let text = text.lowercased()
+        if text.split(whereSeparator: \.isWhitespace).count >= 14 { return true }
+        return disclaimerPatterns.contains { text.firstMatch(of: $0) != nil }
+    }
+
+    nonisolated(unsafe) private static let disclaimerPatterns: [Regex<Substring>] = [
+        // Offers
+        /offer (?:ends|valid|available|applies|expires|subject)/, /valid (?:until|from|for|on|at|in|while)\b/,
+        /while stocks last/, /limited time/, /participating/, /selected (?:stores|products|lines|items)/,
+        /exclu(?:des|ding|sions)/, /min(?:imum|\.)? (?:spend|order|purchase)/, /\brrp\b/,
+        // Terms
+        /\bt'?s? ?& ?c'?s?\b/, /\bterms (?:apply|and|&|of|at)/, /conditions apply/, /restrictions apply/, /fees apply/,
+        /subject to/, /eligib/, /for (?:full )?details/, /see .*(?:website|store|in-store)/,
+        // Finance
+        /\bapr\b/, /representative/, /credit (?:is )?subject/, /not available (?:in|to|with)/,
+        // Footnotes and legal
+        /^[*†‡]/, /©/, /copyright/, /all rights reserved/, /registered trademark/, /is a trademark/,
+        // Claims and safety
+        /results (?:may )?vary/, /individual results/, /not typical/, /simulated/, /dramati[sz]ation/,
+        /professional driver/, /closed course/, /do not attempt/, /18\+/, /responsibly/,
+    ]
+
     private static func normalized(_ text: String) -> String {
         String(text.lowercased().unicodeScalars.filter(CharacterSet.alphanumerics.contains).map(Character.init))
     }

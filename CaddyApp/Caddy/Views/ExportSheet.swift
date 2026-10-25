@@ -15,10 +15,9 @@ struct ExportSheet: View {
     @State private var template = "frog CAD script"
     @State private var includeThumbnails = true
     @State private var includeNotes = true
-    @State private var includeUnchecked = false
+    @State private var includeSuggestions = true
 
-    private var suggestedCount: Int { rows.filter { $0.status == .suggested }.count }
-    private var uncheckedCount: Int { rows.filter { $0.status == .pending }.count }
+    private var suggestionCount: Int { rows.map(\.suggestionCount).reduce(0, +) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -45,7 +44,7 @@ struct ExportSheet: View {
                     group("Include") {
                         Toggle("Frame thumbnails", isOn: $includeThumbnails)
                         Toggle("Notes column", isOn: $includeNotes)
-                        Toggle("Rows not yet checked", isOn: $includeUnchecked)
+                        Toggle("Suggestions not yet confirmed", isOn: $includeSuggestions)
                     }
                 }
             }
@@ -74,11 +73,9 @@ struct ExportSheet: View {
     }
 
     private var warning: String? {
-        guard !includeUnchecked, suggestedCount + uncheckedCount > 0 else { return nil }
-        var parts: [String] = []
-        if suggestedCount > 0 { parts.append("\(suggestedCount) still suggested") }
-        if uncheckedCount > 0 { parts.append("\(uncheckedCount) unchecked") }
-        return "Rows left out of this export: " + parts.joined(separator: ", ") + "."
+        guard suggestionCount > 0 else { return nil }
+        let count = suggestionCount == 1 ? "1 suggestion isn't" : "\(suggestionCount) suggestions aren't"
+        return "\(count) confirmed yet. " + (includeSuggestions ? "They'll be exported as they are." : "They'll be left out.")
     }
 
     private func group<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {

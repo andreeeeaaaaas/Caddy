@@ -1,10 +1,17 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// One ad: script sheet, inspector and filmstrip in a single window.
+/// One ad in a single window: the player with the section under the playhead,
+/// or the script sheet with inspector and filmstrip.
 struct DocumentView: View {
+    enum ViewMode: String {
+        case playback, sheet
+    }
+
     @Binding var document: CaddyDocument
 
+    @AppStorage("viewMode") private var viewMode = ViewMode.playback
     @State private var playback = Playback()
     @State private var thumbnails = Thumbnails()
     @State private var analyzer = Analyzer()
@@ -13,6 +20,7 @@ struct DocumentView: View {
     @State private var showExport = false
     @State private var showSensitivity = false
     @State private var videoMissing = false
+    @Environment(\.undoManager) private var undoManager
 
     private var rows: [ScriptRow] { document.script.rows }
 
@@ -22,6 +30,12 @@ struct DocumentView: View {
                 EmptyDocumentView { url in document.script.videoPath = url.path }
             } else {
                 workspace
+                    .onKeyPress(.space) {
+                        // Typing in a field gets the space.
+                        guard !(NSApp.keyWindow?.firstResponder is NSText) else { return .ignored }
+                        playback.togglePlay()
+                        return .handled
+                    }
             }
         }
         .frame(minWidth: 1000, minHeight: 640)
@@ -37,13 +51,24 @@ struct DocumentView: View {
             if selection == nil { selection = rows.first?.id }
         }
         .onChange(of: selection) {
-            if let row = rows.first(where: { $0.id == selection }) {
-                playback.seek(to: row.time)
-            }
+            // The playhead may already be in this frame, e.g. when the carousel follows playback.
+            guard let index = rows.firstIndex(where: { $0.id == selection }),
+                  rows.index(at: playback.currentTime) != index else { return }
+            playback.seek(to: rows[index].time)
         }
     }
 
+    @ViewBuilder
     private var workspace: some View {
+        switch viewMode {
+        case .playback:
+            PlaybackView(rows: $document.script.rows, selection: $selection, playback: playback)
+        case .sheet:
+            sheetWorkspace
+        }
+    }
+
+    private var sheetWorkspace: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 ScriptSheet(
@@ -77,11 +102,10 @@ struct DocumentView: View {
                 row: row,
                 number: index + 1,
                 segmentEnd: index + 1 < rows.count ? rows[index + 1].time : playback.duration,
-                playback: playback,
-                onRemove: { remove(id) }
+                playback: playback
             )
         } else {
-            ContentUnavailableView("No Frame Selected", systemImage: "rectangle.on.rectangle", description: Text("Select a row to see its frame and fields."))
+            ContentUnavailableView("No Section Selected", systemImage: "rectangle.on.rectangle", description: Text("Select a row to see its frame and elements."))
                 .frame(maxHeight: .infinity)
                 .background(.background.secondary)
         }
@@ -89,31 +113,48 @@ struct DocumentView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            Picker("View", selection: $viewMode) {
+                Label("Playback", systemImage: "play.rectangle").tag(ViewMode.playback)
+                Label("Sheet", systemImage: "rectangle.grid.1x3").tag(ViewMode.sheet)
+            }
+            .pickerStyle(.segmented)
+            .labelStyle(.iconOnly)
+            .help("Show the player with one section at a time, or the whole script as a sheet")
+        }
         ToolbarItem(placement: .principal) {
-            StatusView(phase: analyzer.phase, notice: analyzer.notice, rows: rows, videoMissing: videoMissing)
+            StatusView(
+                phase: analyzer.phase,
+                notice: analyzer.notice,
+                rows: rows,
+                videoMissing: videoMissing,
+                onNext: nextSuggestion,
+                onAcceptAll: acceptAllSuggestions
+            )
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Button("Scene Sensitivity", systemImage: "slider.horizontal.3") { showSensitivity.toggle() }
-                .help("How many frames to suggest")
+                .help("How many sections scene detection finds")
                 .disabled(document.script.videoPath == nil)
                 .popover(isPresented: $showSensitivity, arrowEdge: .bottom) {
                     SensitivityView(
                         sensitivity: $document.script.sensitivity,
-                        suggestedCount: rows.filter { $0.status == .suggested }.count,
+                        sectionCount: rows.count,
                         hasScores: document.script.sceneScores != nil,
                         isBusy: analyzer.isBusy,
                         detect: detectScenes
                     )
                 }
-            Button("Add Frame", systemImage: "plus.rectangle.on.rectangle", action: addFrame)
+            Button("Add Section", systemImage: "plus.rectangle.on.rectangle", action: addSection)
                 .keyboardShortcut("f", modifiers: .command)
-                .help("Add a frame at the playhead (⌘F)")
-                .disabled(document.script.videoPath == nil)
+                .help("Add a section at the playhead (⌘F)")
+                .disabled(document.script.videoPath == nil || rows.hasFrame(at: playback.currentTime))
             Button("Export…", systemImage: "square.and.arrow.up") { showExport = true }
                 .help("Export the script as Word or PDF")
                 .disabled(rows.isEmpty)
             Button("Inspector", systemImage: "sidebar.trailing") { showInspector.toggle() }
                 .help(showInspector ? "Hide inspector" : "Show inspector")
+                .disabled(viewMode == .playback)
         }
     }
 
@@ -138,16 +179,25 @@ struct DocumentView: View {
         Task { await analyzer.detectScenes(videoURL: url, script: $document.script) }
     }
 
-    private func addFrame() {
-        let row = ScriptRow(time: playback.currentTime)
-        document.script.rows.append(row)
-        document.script.rows.sort { $0.time < $1.time }
-        selection = row.id
+    /// Selects the next section with suggestions, wrapping round to the first.
+    private func nextSuggestion() {
+        let start = (rows.firstIndex { $0.id == selection } ?? -1) + 1
+        let order = rows[start...] + rows[..<start]
+        if let row = order.first(where: { $0.suggestionCount > 0 }) { selection = row.id }
     }
 
-    private func remove(_ id: ScriptRow.ID) {
-        document.script.rows.removeAll { $0.id == id }
-        selection = nil
+    private func acceptAllSuggestions() {
+        $document.script.rows.change("Confirm All Suggestions", undoManager: undoManager) { rows in
+            for r in rows.indices {
+                for e in rows[r].elements.indices { rows[r].elements[e].source = nil }
+            }
+        }
+    }
+
+    private func addSection() {
+        if let id = $document.script.rows.add(at: playback.currentTime, undoManager: undoManager) {
+            selection = id
+        }
     }
 
     /// Looks the row up by ID on every access, so deleting a row can't leave a stale index.
@@ -169,6 +219,10 @@ private struct StatusView: View {
     let notice: String?
     let rows: [ScriptRow]
     let videoMissing: Bool
+    let onNext: () -> Void
+    let onAcceptAll: () -> Void
+
+    private var suggestions: Int { rows.map(\.suggestionCount).reduce(0, +) }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -189,7 +243,20 @@ private struct StatusView: View {
                 Text("Transcribing")
                 ProgressView(value: progress).frame(width: 120)
             case .idle, .finished:
-                Text(summary)
+                if suggestions > 0 {
+                    Menu {
+                        Button("Next Suggestion", systemImage: "arrow.down", action: onNext)
+                        Button("Confirm All Suggestions", systemImage: "checkmark.circle", action: onAcceptAll)
+                    } label: {
+                        Text(summary)
+                    }
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .fixedSize()
+                    .help("Go to the next suggestion, or confirm them all")
+                } else {
+                    Text(summary)
+                }
                 if let notice {
                     Label(notice, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
@@ -203,18 +270,16 @@ private struct StatusView: View {
     }
 
     private var summary: String {
-        let checked = rows.filter { $0.status == .checked }.count
-        let suggested = rows.filter { $0.status == .suggested }.count
-        var parts = ["\(rows.count) frames", "\(checked) checked"]
-        if suggested > 0 { parts.append("\(suggested) suggested") }
+        var parts = ["\(rows.count) \(rows.count == 1 ? "section" : "sections")"]
+        if suggestions > 0 { parts.append("\(suggestions) \(suggestions == 1 ? "suggestion" : "suggestions")") }
         return parts.joined(separator: " · ")
     }
 }
 
-/// Popover for how many frames analysis suggests.
+/// Popover for how many sections scene detection finds.
 private struct SensitivityView: View {
     @Binding var sensitivity: Double
-    let suggestedCount: Int
+    let sectionCount: Int
     let hasScores: Bool
     let isBusy: Bool
     let detect: () -> Void
@@ -233,13 +298,13 @@ private struct SensitivityView: View {
                 }
                 .labelsHidden()
                 HStack {
-                    Text("\(suggestedCount) suggested \(suggestedCount == 1 ? "frame" : "frames")")
+                    Text("\(sectionCount) \(sectionCount == 1 ? "section" : "sections")")
                         .monospacedDigit()
                     Spacer()
                     Button("Default") { sensitivity = SceneDetector.defaultSensitivity }
                         .disabled(abs(sensitivity - SceneDetector.defaultSensitivity) < 0.001)
                 }
-                Text("Accepted and added frames are kept.")
+                Text("Sections you've added or written in stay.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {

@@ -88,10 +88,8 @@ struct FilmstripView: View {
                 switch row.status {
                 case .checked:
                     Rectangle().fill(CaddyStyle.checked)
-                case .pending:
+                case .pending, .detected:
                     Rectangle().fill(.secondary)
-                case .suggested:
-                    Rectangle().stroke(.secondary, style: StrokeStyle(lineWidth: 1.5, dash: [2, 2]))
                 }
             }
             .frame(width: 8, height: 8)

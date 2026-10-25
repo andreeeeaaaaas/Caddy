@@ -7,22 +7,33 @@ struct ScriptSheet: View {
     let thumbnails: Thumbnails
     let isTranscribing: Bool
 
+    @Environment(\.undoManager) private var undoManager
+
     var body: some View {
         List(selection: $selection) {
             Section {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                     SheetRow(row: row, number: index + 1, thumbnails: thumbnails, isTranscribing: isTranscribing)
                         .tag(row.id)
+                        .contextMenu {
+                            Button("Delete Section \(index + 1)", systemImage: "trash", role: .destructive) { delete(row.id) }
+                                .keyboardShortcut(.delete, modifiers: [])
+                                .disabled(index == 0)
+                        }
                 }
             } header: {
                 SheetHeader()
             }
         }
         .listStyle(.plain)
-        .onDeleteCommand(perform: removeSelected)
+        .onDeleteCommand {
+            if let selection { delete(selection) }
+        }
         .onKeyPress(.return) {
-            guard let index = selectedIndex, rows[index].status == .suggested else { return .ignored }
-            rows[index].status = .pending
+            guard let index = selectedIndex, rows[index].suggestionCount > 0 else { return .ignored }
+            $rows.change("Confirm Suggestions", undoManager: undoManager) { rows in
+                for i in rows[index].elements.indices { rows[index].elements[i].source = nil }
+            }
             return .handled
         }
     }
@@ -31,10 +42,9 @@ struct ScriptSheet: View {
         rows.firstIndex { $0.id == selection }
     }
 
-    private func removeSelected() {
-        guard let index = selectedIndex else { return }
-        rows.remove(at: index)
-        selection = rows.indices.contains(index) ? rows[index].id : rows.last?.id
+    /// Merges the row into the one before it and selects that one.
+    private func delete(_ id: ScriptRow.ID) {
+        if let kept = $rows.merge(id, undoManager: undoManager) { selection = kept }
     }
 }
 
@@ -72,7 +82,7 @@ private struct SheetRow: View {
     let thumbnails: Thumbnails
     let isTranscribing: Bool
 
-    private var isSuggested: Bool { row.status == .suggested }
+    private var hasSuggestions: Bool { row.suggestionCount > 0 }
 
     var body: some View {
         HStack(alignment: .top, spacing: Column.spacing) {
@@ -87,47 +97,40 @@ private struct SheetRow: View {
                 .frame(width: Column.timecode, alignment: .leading)
             vo
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text(row.supers)
+            Text(row.text(.superText))
                 .frame(width: Column.supers, alignment: .leading)
-            Text(row.notes)
+            Text(row.text(.note))
                 .foregroundStyle(.secondary)
                 .frame(width: Column.notes, alignment: .leading)
             statusIcon
                 .frame(width: Column.status)
         }
         .padding(.vertical, 6)
-        .padding(.horizontal, isSuggested ? 6 : 0)
-        .overlay {
-            if isSuggested {
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(.secondary.opacity(0.6), style: CaddyStyle.suggestionDash)
-            }
-        }
     }
 
     @ViewBuilder
     private var vo: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if row.vo.isEmpty && isTranscribing && isSuggested {
+            let vo = row.text(.voiceover)
+            if vo.isEmpty && isTranscribing {
                 Text("Transcribing…")
                     .foregroundStyle(.tertiary)
                     .redacted(reason: .placeholder)
-            } else if row.vo.isEmpty {
+            } else if vo.isEmpty {
                 Text("No VO")
-                    .italic()
                     .foregroundStyle(.tertiary)
             } else {
-                Text(row.vo)
-                    .foregroundStyle(isSuggested ? .secondary : .primary)
+                Text(vo)
+                    .foregroundStyle(row.elements.contains { $0.kind == .voiceover && $0.isSuggested } ? .secondary : .primary)
             }
-            if isSuggested {
+            if hasSuggestions {
                 HStack(spacing: 8) {
-                    Text("Suggested")
+                    Text(row.suggestionCount == 1 ? "1 suggestion" : "\(row.suggestionCount) suggestions")
                         .font(.caption.weight(.medium))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(CaddyStyle.placeholder, in: .rect(cornerRadius: 4))
-                    Text("⏎ Accept   ⌫ Remove")
+                    Text("⏎ Confirm")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -142,11 +145,9 @@ private struct SheetRow: View {
         case .checked:
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(CaddyStyle.checked)
-        case .pending:
+        case .pending, .detected:
             Image(systemName: "circle")
                 .foregroundStyle(.tertiary)
-        case .suggested:
-            EmptyView()
         }
     }
 }
