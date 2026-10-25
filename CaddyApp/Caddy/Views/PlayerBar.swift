@@ -200,16 +200,41 @@ struct FrameMenu: View {
 private struct BarButtonStyle: ButtonStyle {
     let width: CGFloat
     var isOn = false
-    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
+        BarButton(configuration: configuration, width: width, isOn: isOn)
+    }
+}
+
+/// A dark bar button that lifts and lightens on hover, and presses in with a
+/// springy release on click.
+private struct BarButton: View {
+    let configuration: ButtonStyleConfiguration
+    let width: CGFloat
+    let isOn: Bool
+
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
+
+    var body: some View {
+        let isPressed = configuration.isPressed
+        let isHovered = isHovering && isEnabled && !isPressed
         configuration.label
             .font(.system(size: 28))
             .foregroundStyle(isOn ? .mint : .white)
+            .scaleEffect(isPressed ? 0.85 : 1)
             .frame(width: width, height: 60)
             .background(.black.opacity(0.85), in: .rect(cornerRadius: 16))
-            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.4)
+            .overlay {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.white.opacity(isHovered ? 0.1 : 0))
+            }
+            .scaleEffect(isPressed ? 0.94 : isHovered ? 1.04 : 1)
+            .opacity(isEnabled ? 1 : 0.4)
             .contentShape(.rect(cornerRadius: 16))
+            .onHover { isHovering = $0 }
+            .animation(.spring(duration: 0.3, bounce: 0.45), value: isPressed)
+            .animation(.easeOut(duration: 0.15), value: isHovered)
     }
 }
 

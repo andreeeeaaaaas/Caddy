@@ -45,16 +45,18 @@ struct PlaybackView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // The video sits centred above the bar. The panel beside it ends
-            // level with the video's bottom but runs up under the toolbar, and
-            // its cards start level with the video's top, so they can scroll up.
+            // The video sits centred above the bar. The panel beside it runs
+            // from under the toolbar down to just above the bar, and its cards
+            // start level with the video's top, so they can scroll up.
             HStack(alignment: .top, spacing: 32) {
                 player
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { videoFrame = $0 }
                     .padding(.vertical, 32)
                     .frame(maxHeight: .infinity)
                 panel
-                    .frame(width: 363, height: max(videoFrame.maxY, 1))
+                    .frame(width: 363)
+                    .frame(maxHeight: .infinity)
+                    .padding(.bottom, 16)
                     .ignoresSafeArea(.container, edges: .top)
             }
             .frame(maxHeight: .infinity)
@@ -183,6 +185,11 @@ struct PlaybackView: View {
 
     // MARK: Panel
 
+    /// Where the cards start in the panel's content, level with the video's top.
+    private var cardsTop: CGFloat {
+        max(0, videoFrame.minY - panelFrame.minY - scrollMetrics.insetTop)
+    }
+
     @ViewBuilder
     private var panel: some View {
         if let index = selectedIndex {
@@ -191,7 +198,7 @@ struct PlaybackView: View {
                 ScrollView(.vertical) {
                     VStack(spacing: 0) {
                         // Level with the top of the video.
-                        Color.clear.frame(height: max(0, videoFrame.minY - panelFrame.minY - scrollMetrics.insetTop))
+                        Color.clear.frame(height: cardsTop)
                         SectionPanel(
                             row: binding(for: row.id),
                             number: index + 1,
@@ -220,10 +227,13 @@ struct PlaybackView: View {
                     }
                 }
                 .scrollIndicators(.automatic)
+                // Only the cards run up under the toolbar, not the scroll bar.
+                .contentMargins(.top, cardsTop, for: .scrollIndicators)
                 .scrollBounceBehavior(.basedOnSize)
                 .scrollPosition($scroll)
-                // Cards scrolled up under the toolbar blur away softly.
-                .scrollEdgeEffectStyle(.soft, for: .top)
+                // The toolbar's own background blurs cards scrolled under it.
+                // The edge effect would add a second band over just the panel.
+                .scrollEdgeEffectHidden(true, for: .top)
                 .onScrollGeometryChange(for: ScrollMetrics.self) { geometry in
                     ScrollMetrics(
                         offset: geometry.contentOffset.y,
@@ -299,9 +309,7 @@ struct PlaybackView: View {
     }
 
     private func acceptAll(_ id: ScriptRow.ID) {
-        edit(id, "Confirm Suggestions") { row in
-            for i in row.elements.indices { row.elements[i].source = nil }
-        }
+        edit(id, "Confirm Suggestions") { $0.acceptAll() }
     }
 
     private func edit(_ id: ScriptRow.ID, _ actionName: String, _ body: (inout ScriptRow) -> Void) {
@@ -562,44 +570,28 @@ private struct SectionPanel: View {
         Binding {
             row.elements.first { $0.id == id }?.text ?? ""
         } set: { newValue in
-            guard let index = row.elements.firstIndex(where: { $0.id == id }) else { return }
+            // Focusing a field can write its text back unchanged, which mustn't accept it.
+            guard let index = row.elements.firstIndex(where: { $0.id == id }), row.elements[index].text != newValue else { return }
             row.elements[index].text = newValue
             row.elements[index].source = nil
         }
     }
 
     private func accept(_ id: ScriptElement.ID) {
-        edit("Confirm Suggestion") { row in
-            if let index = row.elements.firstIndex(where: { $0.id == id }) { row.elements[index].source = nil }
-        }
+        edit("Confirm Suggestion") { $0.accept(id) }
     }
 
-    /// Changes an element's type, keeping its text and place. Accepts a suggestion.
     private func changeKind(_ element: ScriptElement, to kind: ScriptElement.Kind) {
         guard kind != element.kind else { return }
-        edit("Change to \(kind.title)") { row in
-            guard let index = row.elements.firstIndex(where: { $0.id == element.id }) else { return }
-            row.elements[index].kind = kind
-            row.elements[index].source = nil
-        }
+        edit("Change to \(kind.title)") { $0.change(element.id, to: kind) }
     }
 
-    /// Puts a copy under the element. Duplicating a suggestion accepts it, or
-    /// the accepted copy would stop analysis offering the original.
     private func duplicate(_ element: ScriptElement) {
-        edit("Duplicate \(element.kind.title)") { row in
-            guard let index = row.elements.firstIndex(where: { $0.id == element.id }) else { return }
-            row.elements[index].source = nil
-            row.elements.insert(ScriptElement(kind: element.kind, text: element.text), at: index + 1)
-        }
+        edit("Duplicate \(element.kind.title)") { $0.duplicate(element.id) }
     }
 
-    /// Deletes an element. A dismissed suggestion isn't offered again.
     private func delete(_ element: ScriptElement) {
-        edit(element.isSuggested ? "Dismiss Suggestion" : "Delete Element") { row in
-            row.elements.removeAll { $0.id == element.id }
-            if element.isSuggested { row.dismissed.append(element.text) }
-        }
+        edit(element.isSuggested ? "Dismiss Suggestion" : "Delete Element") { $0.remove(element.id) }
     }
 
     private func add(_ kind: ScriptElement.Kind) {
@@ -607,272 +599,6 @@ private struct SectionPanel: View {
         edit("Add \(kind.title)") { $0.elements.append(element) }
         isPicking = false
         Task { focus.wrappedValue = .element(element.id) }
-    }
-}
-
-/// One element: its kind, where a suggestion came from, and its text.
-/// Suggestions have a dashed outline and accept or dismiss buttons.
-private struct ElementView: View {
-    let element: ScriptElement
-    @Binding var text: String
-    var focus: FocusState<PlaybackView.Focus?>.Binding
-    let onAccept: () -> Void
-    let onChangeKind: (ScriptElement.Kind) -> Void
-    let onDuplicate: () -> Void
-    let onDelete: () -> Void
-    let onDragChanged: (DragGesture.Value) -> Void
-    let onDragEnded: (DragGesture.Value) -> Void
-
-    @State private var isHovering = false
-
-    private var isFocused: Bool { focus.wrappedValue == .element(element.id) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                kindMenu
-                if let source = element.source {
-                    Text("· \(source.title)")
-                        .foregroundStyle(CaddyStyle.suggested)
-                }
-                Spacer()
-                if element.isSuggested {
-                    Button("Confirm", action: onAccept)
-                        .buttonStyle(.plain)
-                        .foregroundStyle(CaddyStyle.suggested)
-                        .help("Confirm this suggestion")
-                    iconButton("Dismiss", systemImage: "trash", help: "Dismiss this suggestion", action: onDelete)
-                        .foregroundStyle(.secondary)
-                } else if isHovering {
-                    iconButton("Duplicate", systemImage: "plus.square.on.square", help: "Put a copy of this \(element.kind.title.lowercased()) underneath", action: onDuplicate)
-                        .foregroundStyle(.secondary)
-                    iconButton("Delete", systemImage: "trash", help: "Delete this \(element.kind.title.lowercased())", action: onDelete)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(height: 16)
-
-            TextField(element.kind.title, text: $text, prompt: Text(element.kind.prompt), axis: .vertical)
-                .textFieldStyle(.plain)
-                .italic(element.kind == .note && !text.isEmpty)
-                .lineSpacing(3)
-                .focused(focus, equals: .element(element.id))
-                .onExitCommand { focus.wrappedValue = .player }
-                .labelsHidden()
-        }
-        .padding(.horizontal, 10)
-        .padding(.top, 14)
-        .padding(.bottom, 12)
-        .background(CaddyStyle.field, in: .rect(cornerRadius: 12))
-        .overlay(alignment: .top) { handle }
-        .overlay {
-            if isFocused {
-                RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor, lineWidth: 2)
-            } else if element.isSuggested {
-                RoundedRectangle(cornerRadius: 12).strokeBorder(CaddyStyle.suggested, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-            }
-        }
-        .onHover { isHovering = $0 }
-    }
-
-    /// The type, as a button on hover that opens a menu of every type.
-    private var kindMenu: some View {
-        Menu {
-            KindPicker(kind: element.kind, onChange: onChangeKind)
-        } label: {
-            HStack(spacing: 5) {
-                Label(element.kind.title, systemImage: element.kind.symbol)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .opacity(isHovering ? 1 : 0)
-            }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Color.primary.opacity(isHovering ? 0.06 : 0), in: .rect(cornerRadius: 6))
-            .padding(.horizontal, -6)
-            .contentShape(.rect)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Change the type")
-    }
-
-    /// The strip along the card's top: drag it to reorder the card, or onto a
-    /// section in the bar to move it there. Shows a grip on hover.
-    private var handle: some View {
-        GripDots()
-            .opacity(isHovering ? 1 : 0)
-            .padding(.top, 3.5)
-            .frame(maxWidth: .infinity, minHeight: 14, alignment: .top)
-            .contentShape(.rect)
-            .pointerStyle(.grabIdle)
-            .gesture(
-                DragGesture(minimumDistance: 2, coordinateSpace: .named(PlaybackView.space))
-                    .onChanged(onDragChanged)
-                    .onEnded(onDragEnded)
-            )
-            .help("Drag to reorder, or onto a section in the bar to move it there")
-            .accessibilityHidden(true)
-    }
-
-    private func iconButton(_ title: String, systemImage: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(title, systemImage: systemImage, action: action)
-            .labelStyle(.iconOnly)
-            .buttonStyle(.plain)
-            .help(help)
-    }
-}
-
-/// A still copy of an element's card, lifted while it's dragged.
-private struct CardFace: View {
-    let element: ScriptElement
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Label(element.kind.title, systemImage: element.kind.symbol)
-                    .foregroundStyle(.secondary)
-                if let source = element.source {
-                    Text("· \(source.title)")
-                        .foregroundStyle(CaddyStyle.suggested)
-                }
-                Spacer()
-            }
-            .frame(height: 16)
-            Text(element.text.isEmpty ? element.kind.prompt : element.text)
-                .foregroundStyle(element.text.isEmpty ? .tertiary : .primary)
-                .italic(element.kind == .note && !element.text.isEmpty)
-                .lineSpacing(3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .font(.system(size: 13))
-        .padding(.horizontal, 10)
-        .padding(.top, 14)
-        .padding(.bottom, 12)
-        .background(CaddyStyle.field, in: .rect(cornerRadius: 12))
-        // The field colour is translucent; nothing should show through a lifted card.
-        .background(.background, in: .rect(cornerRadius: 12))
-        .overlay {
-            if element.isSuggested {
-                RoundedRectangle(cornerRadius: 12).strokeBorder(CaddyStyle.suggested, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-            }
-        }
-    }
-}
-
-/// Every element type, the current one ticked.
-private struct KindPicker: View {
-    let kind: ScriptElement.Kind
-    let onChange: (ScriptElement.Kind) -> Void
-
-    var body: some View {
-        Picker("Type", selection: Binding(get: { kind }, set: onChange)) {
-            ForEach(ScriptElement.Kind.allCases, id: \.self) { kind in
-                Label(kind.title, systemImage: kind.symbol).tag(kind)
-            }
-        }
-        .pickerStyle(.inline)
-        .labelsHidden()
-    }
-}
-
-/// Eight dots, four by two.
-private struct GripDots: View {
-    var body: some View {
-        Grid(horizontalSpacing: 2.5, verticalSpacing: 2.5) {
-            ForEach(0..<2, id: \.self) { _ in
-                GridRow {
-                    ForEach(0..<4, id: \.self) { _ in
-                        Circle().frame(width: 3, height: 3)
-                    }
-                }
-            }
-        }
-        .foregroundStyle(Color.primary.opacity(0.3))
-    }
-}
-
-/// A chip per element kind. Picking one adds that element.
-private struct ElementPicker: View {
-    let onPick: (ScriptElement.Kind) -> Void
-
-    var body: some View {
-        FlowLayout(spacing: 8) {
-            ForEach(ScriptElement.Kind.allCases, id: \.self) { kind in
-                Button {
-                    onPick(kind)
-                } label: {
-                    Label(kind.title, systemImage: kind.symbol)
-                }
-                .buttonStyle(ChipStyle())
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(CaddyStyle.field, in: .rect(cornerRadius: 12))
-    }
-}
-
-private struct ChipStyle: ButtonStyle {
-    @State private var isHovering = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Color.primary.opacity(configuration.isPressed ? 0.2 : isHovering ? 0.14 : 0.07), in: .capsule)
-            .contentShape(.capsule)
-            .onHover { isHovering = $0 }
-    }
-}
-
-/// Lays children out in rows, wrapping when the next one doesn't fit.
-private struct FlowLayout: Layout {
-    var spacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let rows = arrange(subviews, width: proposal.width ?? .infinity)
-        let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
-        let width = rows.map(\.width).max() ?? 0
-        return CGSize(width: proposal.width ?? width, height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var y = bounds.minY
-        for row in arrange(subviews, width: bounds.width) {
-            var x = bounds.minX
-            for index in row.indices {
-                let size = subviews[index].sizeThatFits(.unspecified)
-                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-                x += size.width + spacing
-            }
-            y += row.height + spacing
-        }
-    }
-
-    private struct Row {
-        var indices: [Int] = []
-        var width: CGFloat = 0
-        var height: CGFloat = 0
-    }
-
-    private func arrange(_ subviews: Subviews, width: CGFloat) -> [Row] {
-        var rows = [Row()]
-        for index in subviews.indices {
-            let size = subviews[index].sizeThatFits(.unspecified)
-            if !rows[rows.count - 1].indices.isEmpty && rows[rows.count - 1].width + spacing + size.width > width {
-                rows.append(Row())
-            }
-            let gap = rows[rows.count - 1].indices.isEmpty ? 0 : spacing
-            rows[rows.count - 1].indices.append(index)
-            rows[rows.count - 1].width += gap + size.width
-            rows[rows.count - 1].height = max(rows[rows.count - 1].height, size.height)
-        }
-        return rows
     }
 }
 

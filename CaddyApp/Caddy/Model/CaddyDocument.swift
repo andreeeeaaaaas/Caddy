@@ -85,18 +85,35 @@ nonisolated struct ScriptRow: Identifiable, Codable, Equatable {
         elements.filter(\.isSuggested).count
     }
 
-    /// Every element of a kind, one per line. For views with one column per kind.
-    func text(_ kind: ScriptElement.Kind) -> String {
-        elements.filter { $0.kind == kind }.map(\.text).filter { !$0.isEmpty }.joined(separator: "\n")
+    /// Confirms a suggestion.
+    mutating func accept(_ id: ScriptElement.ID) {
+        if let index = elements.firstIndex(where: { $0.id == id }) { elements[index].source = nil }
     }
 
-    /// Replaces every element of a kind with one written by the user.
-    mutating func setText(_ kind: ScriptElement.Kind, _ text: String) {
-        let index = elements.firstIndex { $0.kind == kind }
-        elements.removeAll { $0.kind == kind }
-        guard !text.isEmpty else { return }
-        let element = ScriptElement(kind: kind, text: text)
-        if let index { elements.insert(element, at: min(index, elements.count)) } else { insert(element) }
+    mutating func acceptAll() {
+        for index in elements.indices { elements[index].source = nil }
+    }
+
+    /// Changes an element's type, keeping its text and place. Accepts a suggestion.
+    mutating func change(_ id: ScriptElement.ID, to kind: ScriptElement.Kind) {
+        guard let index = elements.firstIndex(where: { $0.id == id }) else { return }
+        elements[index].kind = kind
+        elements[index].source = nil
+    }
+
+    /// Puts a copy under the element. Duplicating a suggestion accepts it, or
+    /// the accepted copy would stop analysis offering the original.
+    mutating func duplicate(_ id: ScriptElement.ID) {
+        guard let index = elements.firstIndex(where: { $0.id == id }) else { return }
+        elements[index].source = nil
+        elements.insert(ScriptElement(kind: elements[index].kind, text: elements[index].text), at: index + 1)
+    }
+
+    /// Deletes an element. A dismissed suggestion isn't offered again.
+    mutating func remove(_ id: ScriptElement.ID) {
+        guard let index = elements.firstIndex(where: { $0.id == id }) else { return }
+        let element = elements.remove(at: index)
+        if element.isSuggested { dismissed.append(element.text) }
     }
 
     /// Adds an element after the others of its kind, keeping kinds in their usual order.
