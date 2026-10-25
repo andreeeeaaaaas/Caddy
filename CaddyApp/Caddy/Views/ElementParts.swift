@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 // Pieces shared by the playback panel's cards and the grid's.
 
@@ -34,6 +33,59 @@ struct KindMenu: View {
         .fixedSize()
         .onHover { isHovering = $0 }
         .help("Change the type")
+    }
+}
+
+/// ✦ Confirm for a suggestion, in its purple. A soft tint on hover shows it's a button.
+struct ConfirmButton: View {
+    let title: String
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 2) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11))
+                Text(title)
+            }
+        }
+        .buttonStyle(ConfirmButtonStyle())
+        .help(help)
+    }
+}
+
+private struct ConfirmButtonStyle: ButtonStyle {
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(CaddyStyle.suggested)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(CaddyStyle.suggested.opacity(configuration.isPressed ? 0.2 : isHovering ? 0.12 : 0), in: .rect(cornerRadius: 6))
+            // The tint reaches past the label without moving it.
+            .padding(.horizontal, -6)
+            .padding(.vertical, -2)
+            .contentShape(.rect)
+            .onHover { isHovering = $0 }
+            .animation(CaddyStyle.hover, value: isHovering)
+    }
+}
+
+/// A plain icon (or icon and label) button that strengthens a little on hover,
+/// darker in light mode and lighter in dark, to show it's clickable.
+struct IconButtonStyle: ButtonStyle {
+    /// How strong it is at rest: 0.5 for secondary, 0.25 for faint.
+    var rest = 0.5
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(.primary.opacity(rest + (configuration.isPressed ? 0.35 : isHovering ? 0.2 : 0)))
+            .contentShape(.rect)
+            .onHover { isHovering = $0 }
+            .animation(CaddyStyle.hover, value: isHovering)
     }
 }
 
@@ -99,6 +151,7 @@ private struct ChipStyle: ButtonStyle {
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(Color.primary.opacity(configuration.isPressed ? 0.2 : isHovering ? 0.14 : 0.07), in: .capsule)
+            .animation(CaddyStyle.hover, value: isHovering)
             .contentShape(.capsule)
             .onHover { isHovering = $0 }
     }
@@ -161,10 +214,9 @@ struct ElementView: View {
     let onChangeKind: (ScriptElement.Kind) -> Void
     let onDuplicate: () -> Void
     let onDelete: () -> Void
-    /// The playback panel's own drag, in `PlaybackView.space`. Without it the
-    /// card drags with system drag and drop, as in the grid.
-    var onDragChanged: ((DragGesture.Value) -> Void)? = nil
-    var onDragEnded: ((DragGesture.Value) -> Void)? = nil
+    /// The playback panel's drag, in `PlaybackView.space`.
+    let onDragChanged: (DragGesture.Value) -> Void
+    let onDragEnded: (DragGesture.Value) -> Void
 
     @State private var isHovering = false
 
@@ -177,24 +229,12 @@ struct ElementView: View {
                 Spacer()
                 if let source = element.source {
                     HStack(spacing: 10) {
-                        Button(action: onAccept) {
-                            HStack(spacing: 2) {
-                                Image(systemName: "sparkles")
-                                    .font(.system(size: 11))
-                                Text("Confirm")
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(CaddyStyle.suggested)
-                        .help("Confirm this suggestion, \(source.title)")
-                        iconButton("Dismiss", systemImage: "trash", help: "Dismiss this suggestion", action: onDelete)
-                            .foregroundStyle(.tertiary)
+                        ConfirmButton(title: "Confirm", help: "Confirm this suggestion, \(source.title)", action: onAccept)
+                        iconButton("Dismiss", systemImage: "trash", help: "Dismiss this suggestion", rest: 0.25, action: onDelete)
                     }
                 } else if isHovering {
                     iconButton("Duplicate", systemImage: "plus.square.on.square", action: onDuplicate)
-                        .foregroundStyle(.secondary)
                     iconButton("Delete", systemImage: "trash", action: onDelete)
-                        .foregroundStyle(.secondary)
                 }
             }
             .frame(height: 16)
@@ -226,36 +266,26 @@ struct ElementView: View {
 
     /// The strip along a confirmed card's top: drag it to reorder the card, or
     /// to another section. Shows a grip on hover.
-    @ViewBuilder
     private var handle: some View {
-        let grip = GripDots()
+        GripDots()
             .opacity(isHovering ? 1 : 0)
             .padding(.top, 3.5)
             .frame(maxWidth: .infinity, minHeight: 14, alignment: .top)
             .contentShape(.rect)
             .pointerStyle(.grabIdle)
             .accessibilityHidden(true)
-        if let onDragChanged, let onDragEnded {
-            grip
-                .gesture(
-                    DragGesture(minimumDistance: 2, coordinateSpace: .named(PlaybackView.space))
-                        .onChanged(onDragChanged)
-                        .onEnded(onDragEnded)
-                )
-                .help("Drag to reorder, or onto a section in the bar to move it there")
-        } else {
-            grip
-                .draggable(ElementDrag(id: element.id)) {
-                    CardFace(element: element).frame(width: 360)
-                }
-                .help("Drag to reorder, or onto another section")
-        }
+            .gesture(
+                DragGesture(minimumDistance: 2, coordinateSpace: .named(PlaybackView.space))
+                    .onChanged(onDragChanged)
+                    .onEnded(onDragEnded)
+            )
+            .help("Drag to reorder, or onto a section in the bar to move it there")
     }
 
-    private func iconButton(_ title: String, systemImage: String, help: String? = nil, action: @escaping () -> Void) -> some View {
+    private func iconButton(_ title: String, systemImage: String, help: String? = nil, rest: Double = 0.5, action: @escaping () -> Void) -> some View {
         Button(title, systemImage: systemImage, action: action)
             .labelStyle(.iconOnly)
-            .buttonStyle(.plain)
+            .buttonStyle(IconButtonStyle(rest: rest))
             .help(help ?? title)
     }
 }
@@ -285,18 +315,4 @@ struct CardFace: View {
         // The field colour is translucent; nothing should show through a lifted card.
         .background(.background, in: .rect(cornerRadius: 12))
     }
-}
-
-/// An element being dragged to another place in the script.
-nonisolated struct ElementDrag: Codable, Transferable {
-    let id: ScriptElement.ID
-
-    static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: .caddyElement)
-    }
-}
-
-extension UTType {
-    /// Declared in Info.plist. Only Caddy accepts it, so a card dropped on a text field isn't pasted as text.
-    nonisolated static let caddyElement = UTType(exportedAs: "andreasthoma.caddy.element")
 }

@@ -6,7 +6,8 @@ import SwiftUI
 /// The grid view: the whole script as a table with one row per section. Its
 /// Script cell holds the section's elements as cards, in the order they happen,
 /// as the playback panel and the export have them. Hover a frame to skim the
-/// section, with Play and Loop on it.
+/// section, with Play and Loop on it. Cards drag as in the playback panel:
+/// the card lifts and follows the pointer while the others make room for it.
 ///
 /// Laid out by hand rather than with `Table`, whose selection is the strong
 /// accent and which lays cells out at a column's widest, so a frame couldn't
@@ -25,12 +26,22 @@ struct ScriptTable: View {
     @AppStorage("gridTimeWidth") private var timeWidth = 96.0
     @State private var loopingRow: ScriptRow.ID?
     @FocusState private var focus: PlaybackView.Focus?
-    @State private var hoveredRow: ScriptRow.ID?
+    /// The section under the playhead while it plays. Watched by `PlayheadWatcher`,
+    /// so the table redraws when the playing section changes, not every frame.
+    @State private var playingRow: ScriptRow.ID?
     /// The row whose context menu is open: the only time a row is highlighted.
     /// Rows aren't otherwise shown as selected, since editing doesn't need it.
     @State private var menuRow: ScriptRow.ID?
     @State private var rightClickMonitor: Any?
+    @State private var drag: GridDrag?
+    @State private var layout = GridLayout()
     @Environment(\.undoManager) private var undoManager
+
+    /// The coordinate space a dragged card moves in, above the scroll view.
+    nonisolated static let space = "grid"
+    /// The scrolled content's own space, where cards and rows are measured, so
+    /// their frames don't change as it scrolls.
+    nonisolated fileprivate static let contentSpace = "gridContent"
 
     private static let numberWidth: CGFloat = 36
     private static let inset: CGFloat = 10
@@ -50,22 +61,34 @@ struct ScriptTable: View {
         VStack(spacing: 0) {
             header
             Divider()
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                            rowView(index, row)
-                                .id(row.id)
+            // The card stays under the pointer while the rows scroll past it.
+            GridScroller(selection: selection, autoScrollSpeed: autoScrollSpeed, layout: layout, onScroll: updateTarget) {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                        HoverRow(id: row.id, layout: layout) { isHovered in
+                            rowView(index, row, isHovered: isHovered)
                         }
+                        .id(row.id)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.contentSpace)) } action: { layout.rows[row.id] = $0 }
                     }
-                    .padding(.horizontal, Self.inset)
-                    .padding(.vertical, 6)
                 }
-                .onChange(of: selection) {
-                    if let selection { proxy.scrollTo(selection) }
-                }
+                .padding(.horizontal, Self.inset)
+                .padding(.vertical, 6)
+                .coordinateSpace(.named(Self.contentSpace))
+                .animation(.spring(duration: 0.3, bounce: 0.15), value: drag?.slot)
             }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { layout.scrollFrame = $0 }
         }
+        .overlay(alignment: .topLeading) { liftedCard }
+        // Cards drag from here rather than from their own handles: a lazy row
+        // scrolled off screen would end its gesture mid-drag.
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 2, coordinateSpace: .named(Self.space))
+                .onChanged(dragChanged)
+                .onEnded(dragEnded)
+        )
+        .coordinateSpace(.named(Self.space))
+        .background { PlayheadWatcher(playback: playback, rows: rows) { playingRow = $0 } }
         // Takes focus itself, so a card's field doesn't get it when the window opens.
         .focusable()
         .focusEffectDisabled()
@@ -101,7 +124,7 @@ struct ScriptTable: View {
         .frame(height: 28)
     }
 
-    private func rowView(_ index: Int, _ row: ScriptRow) -> some View {
+    private func rowView(_ index: Int, _ row: ScriptRow, isHovered: Bool) -> some View {
         let range = rows.segment(index, duration: playback.duration)
         let isHighlighted = row.id == menuRow
         // No line under or over the highlight.
@@ -118,31 +141,26 @@ struct ScriptTable: View {
                 playback: playback,
                 thumbnails: thumbnails,
                 skimTime: $skimTime,
+                isPlaying: playingRow == row.id,
                 isLooping: loopingRow == row.id,
                 onPlay: { togglePlay(row.id) },
                 onLoop: { toggleLoop(row.id) }
             )
             .padding(.horizontal, Self.cellPadding)
             .frame(width: frameWidth, alignment: .leading)
-            VStack(alignment: .leading, spacing: 8) {
-                Text("\(Timecode.compact(range.lowerBound)) – \(Timecode.compact(range.upperBound))")
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                if row.suggestionCount > 1 {
-                    Button("Confirm All") { acceptAll(row.id) }
-                        .buttonBorderShape(.capsule)
-                        .controlSize(.small)
-                        .help("Confirm every suggestion in this section")
-                }
-            }
-            .padding(.horizontal, Self.cellPadding)
+            Text("\(Timecode.compact(range.lowerBound)) – \(Timecode.compact(range.upperBound))")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, Self.cellPadding)
             .frame(width: timeWidth, alignment: .leading)
             ScriptCell(
                 row: binding(for: row.id),
-                isHovered: hoveredRow == row.id,
+                isHovered: isHovered,
                 focus: $focus,
                 edit: { name, body in edit(row.id, name, body) },
-                move: move
+                onAcceptAll: { acceptAll(row.id) },
+                drag: drag,
+                layout: layout
             )
             .padding(.horizontal, Self.cellPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -167,11 +185,8 @@ struct ScriptTable: View {
         // Clicking anything in the row, a card included, selects it, so
         // switching to playback stays on this section.
         .simultaneousGesture(TapGesture().onEnded { selection = row.id })
-        .onHover { isHovering in
-            if isHovering { hoveredRow = row.id } else if hoveredRow == row.id { hoveredRow = nil }
-        }
         .contextMenu {
-            Button(playback.isPlaying && range.contains(playback.currentTime) ? "Pause" : "Play Section \(index + 1)", systemImage: "play.fill") { togglePlay(row.id) }
+            Button(playingRow == row.id ? "Pause" : "Play Section \(index + 1)", systemImage: "play.fill") { togglePlay(row.id) }
             Button(loopingRow == row.id ? "Stop Looping" : "Loop Section \(index + 1)", systemImage: "repeat") { toggleLoop(row.id) }
             Button("Open in Playback", systemImage: "play.rectangle") { onOpen(row.id) }
             if row.suggestionCount > 0 {
@@ -183,6 +198,125 @@ struct ScriptTable: View {
         }
     }
 
+    // MARK: Dragging
+
+    /// The dragged card, above the rows so it can travel between them.
+    @ViewBuilder
+    private var liftedCard: some View {
+        if let drag {
+            TableCardFace(element: drag.element)
+                .frame(width: drag.size.width, height: drag.size.height, alignment: .top)
+                .scaleEffect(drag.isLifted ? 1.03 : 1)
+                .shadow(color: .black.opacity(drag.isLifted ? 0.18 : 0), radius: 14, y: 8)
+                .offset(x: drag.origin.x, y: drag.origin.y)
+                .allowsHitTesting(false)
+        }
+    }
+
+    /// A confirmed card whose handle, the strip along its top, is under a point in `ScriptTable.space`.
+    private func handle(at point: CGPoint) -> (element: ScriptElement, row: ScriptRow.ID, from: Int, frame: CGRect)? {
+        guard layout.scrollFrame.contains(point) else { return nil }
+        let point = CGPoint(x: point.x - layout.scrollFrame.minX, y: layout.contentY(point.y))
+        for row in rows where layout.rows[row.id]?.contains(point) == true {
+            for (index, element) in row.elements.enumerated() where !element.isSuggested {
+                guard let frame = layout.cards[element.id], frame.contains(point), point.y < frame.minY + TableCard.handleHeight else { continue }
+                return (element, row.id, index, layout.grid(frame))
+            }
+        }
+        return nil
+    }
+
+    private func dragChanged(_ value: DragGesture.Value) {
+        if drag == nil {
+            // Decided once per gesture, so a drag elsewhere can't become a card drag as the rows scroll.
+            guard !layout.ignoresGesture else { return }
+            guard let (element, rowID, from, frame) = handle(at: value.startLocation) else {
+                layout.ignoresGesture = true
+                return
+            }
+            playback.pause()
+            focus = nil
+            drag = GridDrag(
+                element: element,
+                fromRow: rowID,
+                from: from,
+                grab: CGSize(width: value.startLocation.x - frame.minX, height: value.startLocation.y - frame.minY),
+                size: frame.size,
+                origin: frame.origin,
+                pointer: value.location,
+                slot: GridDrag.Slot(row: rowID, index: from)
+            )
+            withAnimation(.snappy(duration: 0.2)) { drag?.isLifted = true }
+        }
+        guard var current = drag else { return }
+        current.origin = CGPoint(x: value.location.x - current.grab.width, y: value.location.y - current.grab.height)
+        current.pointer = value.location
+        drag = current
+        updateTarget()
+    }
+
+    /// It lands in the row its middle is over, after every other card there
+    /// whose middle it has passed.
+    private func updateTarget() {
+        guard let current = drag else { return }
+        let centre = layout.contentY(current.origin.y + current.size.height / 2)
+        // Rows off screen may not be laid out, so only a row the middle is
+        // actually over counts; past either end the slot stays where it was.
+        guard let row = rows.first(where: { layout.rows[$0.id].map { $0.minY <= centre && centre < $0.maxY } ?? false }) else { return }
+        let index = row.elements
+            .filter { $0.id != current.element.id && (layout.cards[$0.id]?.midY ?? .infinity) < centre }
+            .count
+        let slot = GridDrag.Slot(row: row.id, index: index)
+        if slot != current.slot { drag?.slot = slot }
+    }
+
+    /// Settles the card into its slot, then moves it.
+    private func dragEnded(_ value: DragGesture.Value) {
+        layout.ignoresGesture = false
+        guard let current = drag else { return }
+        let isHome = current.slot.row == current.fromRow
+        let slotFrame = (isHome ? layout.cards[current.element.id] : layout.gap).map(layout.grid)
+            ?? CGRect(origin: current.origin, size: current.size)
+        withAnimation(.spring(duration: 0.25, bounce: 0.1)) {
+            drag?.origin = slotFrame.origin
+            drag?.isLifted = false
+        } completion: {
+            finishDrag {
+                let index = current.slot.index
+                if !isHome {
+                    move(current.element.id, to: current.slot.row, at: index)
+                } else if index != current.from {
+                    // `move` counts positions with the card still in place.
+                    move(current.element.id, to: current.fromRow, at: index < current.from ? index : index + 1)
+                }
+            }
+        }
+    }
+
+    /// Makes the move and drops the lifted card in one step, so nothing jumps.
+    private func finishDrag(_ body: () -> Void) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            body()
+            drag = nil
+        }
+    }
+
+    /// Points a frame to scroll by: faster the further the pointer is into the
+    /// table's top or bottom 48 points.
+    private var autoScrollSpeed: Int {
+        guard let drag, layout.scrollFrame.height > 0 else { return 0 }
+        let zone: CGFloat = 48
+        let frame = layout.scrollFrame
+        let y = drag.pointer.y
+        let isUp = y < frame.midY
+        let depth = isUp ? frame.minY + zone - y : y - (frame.maxY - zone)
+        guard depth > 0 else { return 0 }
+        let speed = min(10, max(1, Int((depth / zone * 10).rounded(.up))))
+        return isUp ? -speed : speed
+    }
+
     // MARK: Actions
 
     /// Notes the row under the pointer when a context menu opens (right-click or
@@ -191,7 +325,7 @@ struct ScriptTable: View {
         guard rightClickMonitor == nil else { return }
         rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) { event in
             if event.type == .rightMouseDown || event.modifierFlags.contains(.control) {
-                MainActor.assumeIsolated { menuRow = hoveredRow }
+                MainActor.assumeIsolated { menuRow = layout.hoveredRow }
             }
             return event
         }
@@ -313,6 +447,8 @@ private struct FrameCell: View {
     let playback: Playback
     let thumbnails: Thumbnails
     @Binding var skimTime: Double?
+    /// Whether the playhead is in this section while it plays.
+    let isPlaying: Bool
     let isLooping: Bool
     let onPlay: () -> Void
     let onLoop: () -> Void
@@ -326,10 +462,6 @@ private struct FrameCell: View {
     private static let steps = 16
 
     private var height: CGFloat { (width * 9 / 16).rounded() }
-
-    private var isPlayingHere: Bool {
-        playback.isPlaying && range.contains(playback.currentTime)
-    }
 
     /// The time under the pointer.
     private var exactSkim: Double? {
@@ -348,7 +480,7 @@ private struct FrameCell: View {
         Rectangle()
             .fill(CaddyStyle.placeholder)
             .overlay {
-                if isPlayingHere {
+                if isPlaying {
                     PlayerView(player: playback.player, showsControls: false, gravity: .resizeAspectFill)
                 } else if let image = thumbnails.images[time] ?? lastShown.flatMap({ thumbnails.images[$0] }) {
                     Image(decorative: image, scale: 1)
@@ -357,7 +489,7 @@ private struct FrameCell: View {
                 }
             }
             .overlay(alignment: .topLeading) {
-                if let skim, !isPlayingHere {
+                if let skim, !isPlaying {
                     Rectangle()
                         .fill(.red)
                         .frame(width: 2)
@@ -365,8 +497,8 @@ private struct FrameCell: View {
                         .allowsHitTesting(false)
                 }
             }
-            .overlay(alignment: .bottomLeading) {
-                if let exactSkim, !isPlayingHere {
+            .overlay(alignment: .bottomTrailing) {
+                if let exactSkim, !isPlaying {
                     Text(Self.label(exactSkim))
                         .font(.system(size: 11, weight: .medium).monospacedDigit())
                         .foregroundStyle(.white)
@@ -377,11 +509,11 @@ private struct FrameCell: View {
                         .allowsHitTesting(false)
                 }
             }
-            .overlay(alignment: .bottomTrailing) {
+            .overlay(alignment: .bottomLeading) {
                 if skim != nil || isLooping {
-                    HStack(spacing: 4) {
-                        Button(isPlayingHere ? "Pause" : "Play", systemImage: isPlayingHere ? "pause.fill" : "play.fill", action: onPlay)
-                            .help(isPlayingHere ? "Pause" : "Play")
+                    HStack(spacing: 6) {
+                        Button(isPlaying ? "Pause" : "Play", systemImage: isPlaying ? "pause.fill" : "play.fill", action: onPlay)
+                            .help(isPlaying ? "Pause" : "Play")
                         Button("Loop", systemImage: "repeat", action: onLoop)
                             .buttonStyle(FrameButtonStyle(isOn: isLooping))
                             .help(isLooping ? "Stop looping" : "Loop")
@@ -418,100 +550,134 @@ private struct FrameCell: View {
     }
 }
 
-/// The small dark buttons on a frame, like the player bar's. `isOn` tints a toggle.
+/// The dark buttons on a frame, like the player bar's. `isOn` tints a toggle.
 private struct FrameButtonStyle: ButtonStyle {
     var isOn = false
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: 14, weight: .semibold))
             .foregroundStyle(isOn ? .mint : .white)
-            .frame(width: 28, height: 22)
-            .background(.black.opacity(configuration.isPressed ? 0.8 : isHovering ? 0.7 : 0.55), in: .rect(cornerRadius: 6))
-            .contentShape(.rect(cornerRadius: 6))
+            .frame(width: 36, height: 28)
+            .background(.black.opacity(configuration.isPressed ? 0.8 : isHovering ? 0.7 : 0.55), in: .rect(cornerRadius: 8))
+            .animation(CaddyStyle.hover, value: isHovering)
+            .contentShape(.rect(cornerRadius: 8))
             .onHover { isHovering = $0 }
     }
 }
 
 /// A section's elements as cards, top to bottom in the order they happen. The
-/// selected row can add elements. Cards dropped here land between the cards
-/// nearest the pointer.
+/// selected row can add elements. While a card is dragged over this row, the
+/// others make room where it would land.
 private struct ScriptCell: View {
     @Binding var row: ScriptRow
     let isHovered: Bool
     var focus: FocusState<PlaybackView.Focus?>.Binding
     let edit: (String, (inout ScriptRow) -> Void) -> Void
-    let move: (ScriptElement.ID, ScriptRow.ID, Int?) -> Void
+    let onAcceptAll: () -> Void
+    let drag: GridDrag?
+    let layout: GridLayout
 
     @State private var isPicking = false
-    @State private var isTargeted = false
-    /// Each card's frame in the cell, for placing a drop.
-    @State private var frames: [ScriptElement.ID: CGRect] = [:]
 
-    nonisolated private static let space = "scriptCell"
+    private static let spacing: CGFloat = 4
     /// Cards stop here, however wide the column, so Confirm stays near the text.
     static let cardWidth: CGFloat = 600
 
+    /// The cards in the order shown: the dragged one moved to its slot, or a gap
+    /// where it would land when it came from another row.
+    private var items: [CellItem] {
+        var items = row.elements.map { CellItem(element: $0) }
+        guard let drag, drag.slot.row == row.id else { return items }
+        if let from = row.elements.firstIndex(where: { $0.id == drag.element.id }) {
+            let card = items.remove(at: from)
+            items.insert(card, at: min(drag.slot.index, items.count))
+        } else {
+            items.insert(CellItem(element: nil), at: min(drag.slot.index, items.count))
+        }
+        return items
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(row.elements) { element in
-                TableCard(
-                    element: element,
-                    text: text(for: element.id),
-                    focus: focus,
-                    onAccept: { edit("Confirm Suggestion") { $0.accept(element.id) } },
-                    onChangeKind: { kind in
-                        guard kind != element.kind else { return }
-                        edit("Change to \(kind.title)") { $0.change(element.id, to: kind) }
-                    },
-                    onDuplicate: { edit("Duplicate \(element.kind.title)") { $0.duplicate(element.id) } },
-                    onDelete: { edit(element.isSuggested ? "Dismiss Suggestion" : "Delete Element") { $0.remove(element.id) } }
-                )
-                .frame(maxWidth: Self.cardWidth)
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { frames[element.id] = $0 }
+        VStack(alignment: .leading, spacing: Self.spacing) {
+            ForEach(items) { item in
+                if let element = item.element {
+                    card(element)
+                } else {
+                    slot
+                        .frame(height: drag?.size.height ?? 0)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(ScriptTable.contentSpace)) } action: { layout.gap = $0 }
+                }
             }
             if isPicking {
                 ElementPicker(onPick: add)
                     .frame(maxWidth: Self.cardWidth)
-            } else {
-                // Always laid out, so rows don't change height as the pointer passes.
-                Button {
-                    isPicking = true
-                } label: {
-                    Label("Add Element", systemImage: "plus")
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .opacity(isHovered ? 1 : 0)
-                .allowsHitTesting(isHovered)
             }
+            HStack {
+                if !isPicking {
+                    // Always laid out, so rows don't change height as the pointer passes.
+                    Button {
+                        isPicking = true
+                    } label: {
+                        Label("Add Element", systemImage: "plus")
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(IconButtonStyle())
+                    .opacity(isHovered ? 1 : 0)
+                    .allowsHitTesting(isHovered)
+                }
+                Spacer(minLength: 0)
+                if row.suggestionCount > 1 {
+                    Button("Confirm All", action: onAcceptAll)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.small)
+                        .help("Confirm every suggestion in this section")
+                }
+            }
+            .frame(maxWidth: Self.cardWidth)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .coordinateSpace(.named(Self.space))
-        .dropDestination(for: ElementDrag.self) { items, location in
-            guard let id = items.first?.id else { return false }
-            // Counted with the dragged card still in place, as `move` expects.
-            let index = row.elements.filter { (frames[$0.id]?.midY ?? .infinity) < location.y }.count
-            move(id, row.id, index)
-            return true
-        } isTargeted: { isTargeted = $0 }
-        .overlay {
-            if isTargeted {
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Color.accentColor, lineWidth: 2)
-                    .padding(-4)
-                    .frame(maxWidth: Self.cardWidth + 8, maxHeight: .infinity, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .allowsHitTesting(false)
-            }
-        }
         .onChange(of: isHovered) {
             if !isHovered { isPicking = false }
         }
+    }
+
+    @ViewBuilder
+    private func card(_ element: ScriptElement) -> some View {
+        let isDragged = element.id == drag?.element.id
+        // Over another row, the dragged card's own slot closes.
+        let isAway = isDragged && drag?.slot.row != row.id
+        TableCard(
+            element: element,
+            text: text(for: element.id),
+            focus: focus,
+            onAccept: { edit("Confirm Suggestion") { $0.accept(element.id) } },
+            onChangeKind: { kind in
+                guard kind != element.kind else { return }
+                edit("Change to \(kind.title)") { $0.change(element.id, to: kind) }
+            },
+            onDuplicate: { edit("Duplicate \(element.kind.title)") { $0.duplicate(element.id) } },
+            onDelete: { edit(element.isSuggested ? "Dismiss Suggestion" : "Delete Element") { $0.remove(element.id) } }
+        )
+        .frame(maxWidth: Self.cardWidth)
+        // The dragged card is hidden, leaving its slot.
+        .opacity(isDragged ? 0 : 1)
+        .background {
+            if isDragged && !isAway { slot }
+        }
+        .frame(height: isAway ? 0 : nil, alignment: .top)
+        .padding(.bottom, isAway ? -Self.spacing : 0)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(ScriptTable.contentSpace)) } action: { layout.cards[element.id] = $0 }
+    }
+
+    /// Where a dragged card would land.
+    private var slot: some View {
+        RoundedRectangle(cornerRadius: 8)
+            .fill(Color.primary.opacity(0.02))
+            .frame(maxWidth: Self.cardWidth)
     }
 
     /// Typing in a suggestion accepts it.
@@ -548,6 +714,10 @@ private struct TableCard: View {
 
     @State private var isHovering = false
 
+    /// The strip along the top that drags the card. The table's own gesture
+    /// does the dragging, finding the card by this strip.
+    static let handleHeight: CGFloat = 12
+
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             KindMenu(kind: element.kind, onChange: onChangeKind)
@@ -581,18 +751,8 @@ private struct TableCard: View {
     private var actions: some View {
         if let source = element.source {
             HStack(spacing: 10) {
-                Button(action: onAccept) {
-                    HStack(spacing: 2) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 11))
-                        Text("Confirm")
-                    }
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(CaddyStyle.suggested)
-                .help("Confirm this suggestion, \(source.title)")
-                iconButton("Dismiss", systemImage: "trash", action: onDelete)
-                    .foregroundStyle(.tertiary)
+                ConfirmButton(title: "Confirm", help: "Confirm this suggestion, \(source.title)", action: onAccept)
+                iconButton("Dismiss", systemImage: "trash", rest: 0.25, action: onDelete)
             }
         } else {
             // Always laid out, so the text doesn't reflow when they appear.
@@ -600,7 +760,6 @@ private struct TableCard: View {
                 iconButton("Duplicate", systemImage: "plus.square.on.square", action: onDuplicate)
                 iconButton("Delete", systemImage: "trash", action: onDelete)
             }
-            .foregroundStyle(.secondary)
             .opacity(isHovering ? 1 : 0)
         }
     }
@@ -610,21 +769,176 @@ private struct TableCard: View {
         GripDots()
             .opacity(isHovering ? 1 : 0)
             .padding(.top, 3)
-            .frame(maxWidth: .infinity, minHeight: 11, alignment: .top)
+            .frame(maxWidth: .infinity, minHeight: Self.handleHeight, maxHeight: Self.handleHeight, alignment: .top)
             .contentShape(.rect)
             .pointerStyle(.grabIdle)
-            .draggable(ElementDrag(id: element.id)) {
-                CardFace(element: element).frame(width: 360)
-            }
             .help("Drag to reorder, or onto another section")
             .accessibilityHidden(true)
     }
 
-    private func iconButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+    private func iconButton(_ title: String, systemImage: String, rest: Double = 0.5, action: @escaping () -> Void) -> some View {
         Button(title, systemImage: systemImage, action: action)
             .labelStyle(.iconOnly)
-            .buttonStyle(.plain)
+            .buttonStyle(IconButtonStyle(rest: rest))
             .help(title)
+    }
+}
+
+/// A still copy of a confirmed grid card, lifted while it's dragged.
+private struct TableCardFace: View {
+    let element: ScriptElement
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Label(element.kind.title, systemImage: element.kind.symbol)
+                .foregroundStyle(.secondary)
+                .frame(width: 108, alignment: .leading)
+            Text(element.text.isEmpty ? element.kind.prompt : element.text)
+                .foregroundStyle(element.text.isEmpty ? .tertiary : .primary)
+                .lineSpacing(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .font(.system(size: 13))
+        .padding(.horizontal, 10)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+        .background(CaddyStyle.field, in: .rect(cornerRadius: 8))
+        // The field colour is translucent; nothing should show through a lifted card.
+        .background(.background, in: .rect(cornerRadius: 8))
+    }
+}
+
+/// The table's scroll view. It owns the scroll position, which changes as it
+/// scrolls, so scrolling redraws this view rather than every row.
+private struct GridScroller<Content: View>: View {
+    let selection: ScriptRow.ID?
+    let autoScrollSpeed: Int
+    let layout: GridLayout
+    let onScroll: () -> Void
+    @ViewBuilder let content: Content
+
+    @State private var scroll = ScrollPosition()
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView { content }
+                .scrollPosition($scroll)
+                .onScrollGeometryChange(for: GridScroll.self) { geometry in
+                    GridScroll(
+                        offset: geometry.contentOffset.y,
+                        minOffset: -geometry.contentInsets.top,
+                        maxOffset: max(-geometry.contentInsets.top, geometry.contentSize.height + geometry.contentInsets.bottom - geometry.containerSize.height)
+                    )
+                } action: { _, metrics in
+                    layout.scroll = metrics
+                    onScroll()
+                }
+                .onChange(of: selection) {
+                    if let selection { proxy.scrollTo(selection) }
+                }
+        }
+        .task(id: autoScrollSpeed) { await autoScroll() }
+    }
+
+    private func autoScroll() async {
+        let speed = CGFloat(autoScrollSpeed)
+        guard speed != 0 else { return }
+        while !Task.isCancelled {
+            let metrics = layout.scroll
+            let next = min(max(metrics.offset + speed, metrics.minOffset), metrics.maxOffset)
+            if next != metrics.offset { scroll.scrollTo(y: next) }
+            try? await Task.sleep(for: .milliseconds(16))
+        }
+    }
+}
+
+/// A row that tracks its own hover, so the pointer crossing rows redraws
+/// those two rows rather than the whole table.
+private struct HoverRow<Content: View>: View {
+    let id: ScriptRow.ID
+    let layout: GridLayout
+    @ViewBuilder let content: (Bool) -> Content
+
+    @State private var isHovered = false
+
+    var body: some View {
+        content(isHovered)
+            .onHover { isHovering in
+                isHovered = isHovering
+                // For the right-click monitor, which highlights the row whose menu is open.
+                if isHovering { layout.hoveredRow = id } else if layout.hoveredRow == id { layout.hoveredRow = nil }
+            }
+    }
+}
+
+/// Reports the section under the playhead while it plays. Reading the time
+/// here, not in the table, keeps the table from redrawing every frame.
+private struct PlayheadWatcher: View {
+    let playback: Playback
+    let rows: [ScriptRow]
+    let onChange: (ScriptRow.ID?) -> Void
+
+    var body: some View {
+        let id = playback.isPlaying ? rows.index(at: playback.currentTime).map { rows[$0].id } : nil
+        Color.clear.onChange(of: id, initial: true) { onChange(id) }
+    }
+}
+
+/// A card being dragged in the grid: lifted above the rows and following the
+/// pointer, while the cards in the row under it make room where it would land.
+private struct GridDrag {
+    struct Slot: Equatable {
+        var row: ScriptRow.ID
+        /// Among the row's other elements.
+        var index: Int
+    }
+
+    var element: ScriptElement
+    var fromRow: ScriptRow.ID
+    var from: Int
+    /// Where the pointer took hold, from the card's top-left corner.
+    var grab: CGSize
+    var size: CGSize
+    /// The card's top-left corner in `ScriptTable.space`.
+    var origin: CGPoint
+    var pointer: CGPoint
+    var slot: Slot
+    var isLifted = false
+}
+
+/// A card in a row, or the gap where a card from another row would land.
+private struct CellItem: Identifiable {
+    let element: ScriptElement?
+    var id: String { element?.id.uuidString ?? "gap" }
+}
+
+private struct GridScroll: Equatable {
+    var offset: CGFloat = 0
+    var minOffset: CGFloat = 0
+    var maxOffset: CGFloat = 0
+}
+
+/// Where cards and rows sit, for placing a dragged card. Not observed: frames
+/// change as rows lay out, and only a drag reads them.
+private final class GridLayout {
+    /// In `ScriptTable.contentSpace`.
+    var cards: [ScriptElement.ID: CGRect] = [:]
+    var rows: [ScriptRow.ID: CGRect] = [:]
+    var gap: CGRect?
+    /// The scroll view's frame in `ScriptTable.space`.
+    var scrollFrame = CGRect.zero
+    var scroll = GridScroll()
+    var hoveredRow: ScriptRow.ID?
+    /// The current drag didn't start on a card's handle.
+    var ignoresGesture = false
+
+    func contentY(_ y: CGFloat) -> CGFloat {
+        y - scrollFrame.minY + scroll.offset
+    }
+
+    /// A content frame in `ScriptTable.space`.
+    func grid(_ frame: CGRect) -> CGRect {
+        frame.offsetBy(dx: scrollFrame.minX, dy: scrollFrame.minY - scroll.offset)
     }
 }
 

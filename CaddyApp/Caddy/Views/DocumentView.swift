@@ -242,6 +242,9 @@ private struct StatusView: View {
                     .buttonStyle(.plain)
                     .fixedSize()
                     .help("Go to the next suggestion, or confirm them all")
+                    if suggestions > 1 {
+                        ConfirmButton(title: "Confirm All", help: "Confirm every suggestion", action: onAcceptAll)
+                    }
                 } else {
                     Text(summary)
                         .contentTransition(.numericText())

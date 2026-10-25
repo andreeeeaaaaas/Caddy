@@ -234,7 +234,7 @@ private struct BarButton: View {
             .contentShape(.rect(cornerRadius: 16))
             .onHover { isHovering = $0 }
             .animation(.spring(duration: 0.3, bounce: 0.45), value: isPressed)
-            .animation(.easeOut(duration: 0.15), value: isHovered)
+            .animation(CaddyStyle.hover, value: isHovered)
     }
 }
 

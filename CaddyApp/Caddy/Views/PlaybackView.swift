@@ -401,7 +401,8 @@ private struct SectionPanel: View {
     private var shown: [ScriptElement] {
         guard let drag, let slot, let from = row.elements.firstIndex(where: { $0.id == drag.element.id }) else { return row.elements }
         var elements = row.elements
-        elements.insert(elements.remove(at: from), at: min(slot, elements.count - 1))
+        let element = elements.remove(at: from)
+        elements.insert(element, at: min(slot, elements.count))
         return elements
     }
 
@@ -444,8 +445,7 @@ private struct SectionPanel: View {
                         .background(CaddyStyle.field, in: .rect(cornerRadius: 6))
                         .contentShape(.rect)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .buttonStyle(IconButtonStyle())
             }
         }
         .font(.system(size: 13))

@@ -38,16 +38,6 @@
 				</array>
 			</dict>
 		</dict>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>andreasthoma.caddy.element</string>
-			<key>UTTypeDescription</key>
-			<string>Caddy Script Element</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
-		</dict>
 	</array>
 </dict>
 </plist>
