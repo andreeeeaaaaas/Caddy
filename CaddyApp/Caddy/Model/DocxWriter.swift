@@ -16,6 +16,8 @@ import Foundation
 ///   (VO, SUPER…), and the first `LABEL:` one for labels it doesn't have.
 /// - Without thumbnails the frame column is taken out, the script column
 ///   widened to fill it, and rows no longer kept as tall as a frame.
+/// - The table runs from margin to margin, the script column taking up the
+///   difference, whatever widths the template has.
 /// - A picture anchored after the table (the logo) is pinned to the top of
 ///   the bottom margin, so it stays where the template has it however long
 ///   the table runs.
@@ -77,6 +79,9 @@ nonisolated enum DocxWriter {
            let script = roles.firstIndex(of: .script) {
             removeColumn(frame, wideningColumn: script, of: table, rows: table.children("w:tr"))
             roles.remove(at: frame)
+        }
+        if let script = roles.firstIndex(of: .script), let width = textWidth(of: body) {
+            stretch(table, column: script, toWidth: width)
         }
         for row in table.children("w:tr") where !isHeader(row) {
             row.detach()
@@ -274,6 +279,37 @@ nonisolated enum DocxWriter {
             cells[column].detach()
             // The row's least height was the frame's.
             row.children("w:trPr").first?.children("w:trHeight").forEach { $0.detach() }
+        }
+    }
+
+    /// Twips between the page's left and right margins.
+    private static func textWidth(of body: XMLElement) -> Int? {
+        guard let section = body.descendants("w:sectPr").last,
+              let page = section.children("w:pgSz").first?.value(of: "w:w").flatMap(Int.init),
+              let margins = section.children("w:pgMar").first else { return nil }
+        let left = margins.value(of: "w:left").flatMap(Int.init) ?? 0
+        let right = margins.value(of: "w:right").flatMap(Int.init) ?? 0
+        return page - left - right
+    }
+
+    /// Makes the table run from margin to margin, `column` taking up the difference.
+    private static func stretch(_ table: XMLElement, column: Int, toWidth width: Int) {
+        guard let grid = table.children("w:tblGrid").first else { return }
+        let columns = grid.children("w:gridCol")
+        guard columns.indices.contains(column) else { return }
+        let others = columns.indices.filter { $0 != column }
+            .reduce(0) { $0 + (Int(columns[$1].value(of: "w:w") ?? "") ?? 0) }
+        let stretched = String(max(width - others, 0))
+        columns[column].setValue(stretched, of: "w:w")
+        if let properties = table.children("w:tblPr").first {
+            properties.children("w:tblW").first?.setValue(String(width), of: "w:w")
+            properties.children("w:tblW").first?.setValue("dxa", of: "w:type")
+            properties.children("w:tblInd").first?.setValue("0", of: "w:w")
+        }
+        for row in table.children("w:tr") {
+            let cells = row.children("w:tc")
+            guard cells.count == columns.count else { continue }
+            cells[column].children("w:tcPr").first?.children("w:tcW").first?.setValue(stretched, of: "w:w")
         }
     }
 
