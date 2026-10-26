@@ -17,6 +17,7 @@ struct CaddyApp: App {
         }
         .defaultSize(width: 1440, height: 860)
         .commands {
+            CommandGroup(replacing: .appInfo) { AboutButton() }
             CommandGroup(replacing: .newItem) {
                 Button("New Script…") { ui.chooseVideo(in: ui.targetProject(in: library)) }
                     .keyboardShortcut("n")
@@ -38,6 +39,17 @@ struct CaddyApp: App {
                 Button("Show Caddy onboarding") { ui.isShowingWelcome = true }
             }
         }
+
+        Window("About Caddy", id: "about") {
+            AboutView()
+                .windowMinimizeBehavior(.disabled)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .restorationBehavior(.disabled)
+        .defaultPosition(.center)
+        // Opened from the Caddy menu, not listed in the Window menu.
+        .commandsRemoved()
     }
 }
 

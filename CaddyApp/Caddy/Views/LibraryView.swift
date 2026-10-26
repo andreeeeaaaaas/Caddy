@@ -436,6 +436,12 @@ private struct NoScriptView: View {
                 .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // A faint frog under the empty state.
+        .overlay(alignment: .bottom) {
+            FrogMark(width: 44)
+                .foregroundStyle(.tertiary)
+                .padding(.bottom, 32)
+        }
         .background(isTargeted ? Color.accentColor.opacity(0.06) : .clear)
         .dropDestination(for: URL.self) { urls, _ in onDrop(urls) } isTargeted: { isTargeted = $0 }
     }

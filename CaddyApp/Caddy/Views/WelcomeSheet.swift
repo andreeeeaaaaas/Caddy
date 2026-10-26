@@ -143,6 +143,11 @@ struct WelcomeSheet: View {
                     Button("Back") { go(to: previous) }
                         .buttonStyle(.bordered)
                         .transition(.opacity)
+                } else {
+                    MadeAtFrog(markWidth: 22)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -290,7 +295,8 @@ private struct WelcomeIllustration: View {
     }
 }
 
-/// The CAD script card: a dark title bar, then SCENE, VO and SUPER rows.
+/// The CAD script card: a dark title bar, then SCENE, VO and SUPER rows, and
+/// the frog tile in its corner, as on the app icon.
 private struct ScriptSketch: View {
     /// How many rows have their text.
     let filled: Int
@@ -308,17 +314,23 @@ private struct ScriptSketch: View {
                     if index > 0 {
                         Rectangle().fill(Color.primary.opacity(0.1)).frame(width: 160, height: 0.5)
                     }
-                    row(label, shown: filled > index)
+                    // The first row's lines stop short of the frog tile.
+                    row(label, shown: filled > index, widths: index == 0 ? (64, 50) : (94, 68))
                 }
             }
             .padding(.horizontal, 8)
             .padding(.top, 12)
         }
         .frame(width: 176, height: 212, alignment: .top)
+        .overlay(alignment: .topTrailing) {
+            FrogTile(size: 22)
+                .padding(.top, 26)
+                .padding(.trailing, 8)
+        }
         .surface(cornerRadius: 6)
     }
 
-    private func row(_ label: String, shown: Bool) -> some View {
+    private func row(_ label: String, shown: Bool, widths: (CGFloat, CGFloat)) -> some View {
         HStack(alignment: .top, spacing: 8) {
             RoundedRectangle(cornerRadius: 3)
                 .fill(Color.primary.opacity(0.12))
@@ -329,8 +341,8 @@ private struct ScriptSketch: View {
                     .foregroundStyle(.primary.opacity(0.45))
                     .frame(height: 8)
                     .opacity(shown ? 1 : 0)
-                Line(width: 94).grow(shown)
-                Line(width: 68).grow(shown)
+                Line(width: widths.0).grow(shown)
+                Line(width: widths.1).grow(shown)
             }
         }
     }

@@ -160,9 +160,11 @@ struct ExportSheet: View {
     }
 }
 
-/// A sketch of the exported page.
+/// A sketch of the exported page, with the template's logo where it prints.
 private struct PagePreview: View {
     let showThumbnails: Bool
+
+    private static let logo = DocxWriter.templateLogo().flatMap { NSImage(data: $0.data) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -184,6 +186,15 @@ private struct PagePreview: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .overlay(alignment: .bottomTrailing) {
+            if let logo = Self.logo {
+                Image(nsImage: logo)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 40)
+                    .padding(10)
+            }
+        }
         .background(.white, in: .rect(cornerRadius: 3))
         .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
     }
