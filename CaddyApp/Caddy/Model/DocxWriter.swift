@@ -35,9 +35,43 @@ nonisolated enum DocxWriter {
     }
 
     static func data(for document: ExportDocument) throws -> Data {
-        guard let url = Bundle.main.url(forResource: "CADScript", withExtension: "docx"),
-              let template = try? Data(contentsOf: url) else { throw Failure.noTemplate }
+        guard let template = bundledTemplate else { throw Failure.noTemplate }
         return try data(for: document, template: template)
+    }
+
+    private static var bundledTemplate: Data? {
+        Bundle.main.url(forResource: "CADScript", withExtension: "docx").flatMap { try? Data(contentsOf: $0) }
+    }
+
+    /// The picture anchored after the template's table (the logo) and its size
+    /// in points, so the PDF can set the same one in the same place.
+    static func templateLogo(from template: Data? = bundledTemplate) -> (data: Data, width: Double, height: Double)? {
+        guard let template, let entries = try? ZipReader.entries(of: template) else { return nil }
+        let files = Dictionary(entries.map { ($0.path, $0.data) }, uniquingKeysWith: { first, _ in first })
+        guard let main = files["word/document.xml"].flatMap({ try? XMLDocument(data: $0) }),
+              let links = files["word/_rels/document.xml.rels"].flatMap({ try? XMLDocument(data: $0) })?.rootElement(),
+              let body = main.rootElement()?.children("w:body").first,
+              let table = scriptTable(in: body),
+              let siblings = body.children,
+              let start = siblings.firstIndex(where: { $0 === table }) else { return nil }
+        for case let sibling as XMLElement in siblings[(start + 1)...] {
+            for anchor in sibling.descendants("wp:anchor") {
+                guard let id = anchor.descendants("a:blip").first?.value(of: "r:embed"),
+                      let extent = anchor.children("wp:extent").first,
+                      let width = extent.value(of: "cx").flatMap(Double.init),
+                      let height = extent.value(of: "cy").flatMap(Double.init),
+                      let target = links.children("Relationship").first(where: { $0.value(of: "Id") == id })?.value(of: "Target"),
+                      let data = files["word/" + target] else { continue }
+                return (data, width / 12_700, height / 12_700) // EMUs per point
+            }
+        }
+        return nil
+    }
+
+    /// The table with a repeated header row, or the first.
+    private static func scriptTable(in body: XMLElement) -> XMLElement? {
+        let tables = body.descendants("w:tbl")
+        return tables.first { !$0.descendants("w:tblHeader").isEmpty } ?? tables.first
     }
 
     static func data(for document: ExportDocument, template: Data) throws -> Data {
@@ -71,8 +105,7 @@ nonisolated enum DocxWriter {
 
         // The table's rows, one per section.
         var frames: [(path: String, id: String, data: Data)] = []
-        let tables = body.descendants("w:tbl")
-        guard let table = tables.first(where: { !$0.descendants("w:tblHeader").isEmpty }) ?? tables.first,
+        guard let table = scriptTable(in: body),
               let prototype = table.children("w:tr").first(where: { !isHeader($0) }) else { throw Failure.damagedTemplate }
         var roles = prototype.children("w:tc").map(role)
         if !document.options.includeThumbnails, let frame = roles.firstIndex(of: .frame),
@@ -166,14 +199,6 @@ nonisolated enum DocxWriter {
 
     // MARK: Placeholders
 
-    /// The day a script was created, as the template asks: 26 Oct 2026.
-    private static func dateText(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "dd MMM yyyy"
-        return formatter.string(from: date)
-    }
-
     private static func fillPlaceholders(in paragraph: XMLElement, document: ExportDocument) {
         let texts = ownTexts(of: paragraph)
         joinSplitPlaceholders(texts)
@@ -203,7 +228,7 @@ nonisolated enum DocxWriter {
                 let key = match.output.1.lowercased().trimmingCharacters(in: .whitespaces)
                 if key.hasPrefix("client") { return client }
                 if key.hasPrefix("asset") { return document.title }
-                if key.hasPrefix("date") { return dateText(document.created) }
+                if key.hasPrefix("date") { return document.createdText }
                 return String(match.output.0)
             }
             text.setText(clean(value))

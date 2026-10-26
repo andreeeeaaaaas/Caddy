@@ -101,11 +101,6 @@ struct ExportSheet: View {
         return name.isEmpty ? "Script" : name
     }
 
-    /// The video's name, without its extension, under the title.
-    private var details: String {
-        script.videoURL?.deletingPathExtension().lastPathComponent ?? ""
-    }
-
     private func chooseFile() {
         failure = nil
         let panel = NSSavePanel()
@@ -127,7 +122,7 @@ struct ExportSheet: View {
     }
 
     private func write(to url: URL, options: ExportOptions) async {
-        var document = Exporter.document(title: title.isEmpty ? "Script" : title, folder: project, details: details,
+        var document = Exporter.document(title: title.isEmpty ? "Script" : title, folder: project,
                                          created: created, rows: rows, fps: fps, options: options)
         if options.includeThumbnails, let videoURL = script.videoURL {
             let frames = await Exporter.frames(from: videoURL, at: document.sections.map(\.time))

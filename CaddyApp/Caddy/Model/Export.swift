@@ -30,45 +30,24 @@ nonisolated struct ExportOptions: Sendable {
     var includeSuggestions = true
 }
 
-/// A script laid out for export: the frog CAD script template, a table with
-/// Frame and Script columns and one row per section.
+/// A script laid out for export in the frog CAD script template: a table
+/// with #, Frame and Script columns and one row per section.
 nonisolated struct ExportDocument: Sendable {
+    /// The script's name.
     var title: String
-    /// The script's folder, if it's in one.
+    /// The script's folder, if it's in one: the client.
     var folder: String
-    /// The video's name.
-    var details: String
     /// When the script was made.
     var created: Date
     var options: ExportOptions
     var sections: [ExportSection]
 
-    /// The folder and details on one line.
-    var subtitle: String {
-        [folder, details].filter { !$0.isEmpty }.joined(separator: "  ·  ")
-    }
-
-    var columns: [ExportColumn] {
-        options.includeThumbnails ? [.frame, .script] : [.script]
-    }
-
-    /// Column widths in points, across the 7.5" between US Letter's 0.5" margins.
-    func width(of column: ExportColumn) -> Double {
-        switch column {
-        case .frame: 2.8 * 72
-        case .script: options.includeThumbnails ? 4.7 * 72 : 7.5 * 72
-        }
-    }
-}
-
-nonisolated enum ExportColumn: CaseIterable, Sendable {
-    case frame, script
-
-    var title: String {
-        switch self {
-        case .frame: "FRAME"
-        case .script: "SCRIPT"
-        }
+    /// The day the script was made, as the template has it: 26 Oct 2026.
+    var createdText: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "dd MMM yyyy"
+        return formatter.string(from: created)
     }
 }
 
@@ -100,7 +79,7 @@ nonisolated struct ExportImage: Sendable {
 nonisolated enum Exporter {
     /// Lays out the rows, without frames. Empty elements are left out, and
     /// scene descriptions and suggestions unless the options include them.
-    static func document(title: String, folder: String, details: String, created: Date, rows: [ScriptRow], fps: Double,
+    static func document(title: String, folder: String, created: Date, rows: [ScriptRow], fps: Double,
                          options: ExportOptions) -> ExportDocument {
         let sections = rows.map { row in
             let elements = row.elements.filter { element in
@@ -114,8 +93,7 @@ nonisolated enum Exporter {
                 script: elements.map { ExportLine(label: $0.kind.exportLabel, text: $0.richText) }
             )
         }
-        return ExportDocument(title: title, folder: folder, details: details, created: created, options: options,
-                              sections: sections)
+        return ExportDocument(title: title, folder: folder, created: created, options: options, sections: sections)
     }
 
     /// Grabs each section's frame from the video. Frames it can't grab are left out.
