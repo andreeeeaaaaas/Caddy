@@ -75,8 +75,6 @@ The SwiftUI rebuild (see BRD). Open `CaddyApp/Caddy.xcodeproj`. Swift 6, default
 
 Model types are `nonisolated` so `FileDocument` can read and write them off the main actor. Detection and transcription are `@concurrent` and take a URL, since `AVAsset` isn't `Sendable`. Frame times get `Playback.frameNudge` (1 ms) before conversion to `CMTime`, or grabs can land on the previous frame.
 
-To work on the Word export without the app: `CaddyApp/Tools/export-preview.sh [script name] [--quicklook] [--open]` compiles `Model/` with `Tools/ExportPreview/main.swift` (outside the synced folder, so not in the app), writes a library script's `.docx` as the export sheet does (all options on), renders it to PDF in Pages and lays the pages out on one PNG, all in `build/export-preview/`. About 12 s after an edit. Word can't render it: its AppleScript `save as` fails (-1708).
-
 Test ad: `~/Documents/Work/frog/HRB-MaxYourTax_Hero_16x9_15_OP59-v09.mp4` (15 s). Expected frames at the default sensitivity: 0, 7.08, 9.24, 10.92, 13.12, 14.08. Expected supers: "Don't tax yourself" (10.92), "MAX YOUR TAX" (13.12), "H&R BLOCK® / IN-OFFICE | ONLINE" (14.08); "H&R BLOCK®" at 9.24 and 10.92 is the wall sign.
 
 ## Key Constants
