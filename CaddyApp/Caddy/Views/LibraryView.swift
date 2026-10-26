@@ -436,9 +436,9 @@ private struct NoScriptView: View {
                 .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // A faint frog under the empty state.
+        // A faint frog wordmark under the empty state.
         .overlay(alignment: .bottom) {
-            FrogMark(width: 44)
+            FrogWordmark(width: 110)
                 .foregroundStyle(.tertiary)
                 .padding(.bottom, 32)
         }

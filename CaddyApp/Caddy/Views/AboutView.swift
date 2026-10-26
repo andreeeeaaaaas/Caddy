@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Caddy › About Caddy: the icon, name and version, and who made it.
+/// Caddy › About Caddy: the icon, name and version, and the frog wordmark.
 struct AboutView: View {
     private var version: String {
         let info = Bundle.main.infoDictionary
@@ -23,13 +23,13 @@ struct AboutView: View {
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .padding(.top, 2)
-            MadeAtFrog(markWidth: 32)
-                .font(.headline)
+            FrogWordmark(width: 120)
                 .padding(.top, 22)
-            Text("For the brand and creative team")
+            Text("Made at frog for the brand and creative team")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-                .padding(.top, 6)
+                .multilineTextAlignment(.center)
+                .padding(.top, 10)
         }
         .padding(.horizontal, 40)
         .padding(.top, 28)
