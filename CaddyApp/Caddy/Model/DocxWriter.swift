@@ -88,7 +88,7 @@ nonisolated enum DocxWriter {
         // Small grey labels over a hairline, repeated at the top of every page.
         xml += "<w:tr><w:trPr><w:tblHeader/><w:cantSplit/></w:trPr>"
         for (index, column) in columns.enumerated() {
-            let label = paragraph(runs: [run(column.title, font: medium, size: 7.5, color: tertiary, tracking: 1.2)])
+            let label = paragraph(runs: [run(column.title, font: medium, size: 7.5, color: tertiary)])
             xml += cell(width: column.width, bottom: padding, right: hasFrames && index == 0 ? gutter : padding, label)
         }
         xml += "</w:tr>"
