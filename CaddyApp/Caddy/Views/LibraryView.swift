@@ -34,6 +34,7 @@ final class LibraryUI {
     /// The project a chosen video's script goes into.
     var videoProject: Library.Project.ID?
     var isImporting = false
+    var isShowingWelcome = false
 
     init() {
         selection = UserDefaults.standard.string(forKey: "selectedScript").flatMap(UUID.init(uuidString:))
@@ -81,6 +82,8 @@ final class LibraryUI {
 struct LibraryView: View {
     let library: Library
     @Bindable var ui: LibraryUI
+    /// The tour ended on Choose a Video…, so the file picker opens once it's gone.
+    @State private var choosesVideoAfterWelcome = false
 
     var body: some View {
         NavigationSplitView {
@@ -96,6 +99,14 @@ struct LibraryView: View {
         }
         // A `.caddy` file opened from Finder joins the library.
         .onOpenURL { ui.add([$0], to: nil, in: library) }
+        .sheet(isPresented: $ui.isShowingWelcome, onDismiss: {
+            if choosesVideoAfterWelcome {
+                choosesVideoAfterWelcome = false
+                ui.chooseVideo(in: ui.targetProject(in: library))
+            }
+        }) {
+            WelcomeSheet { choosesVideoAfterWelcome = true }
+        }
         .alert("Something Went Wrong", isPresented: Binding { library.error != nil } set: { if !$0 { library.error = nil } }) {
             Button("OK") { library.error = nil }
         } message: {

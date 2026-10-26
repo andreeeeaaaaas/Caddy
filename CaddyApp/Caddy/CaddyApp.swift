@@ -34,6 +34,9 @@ struct CaddyApp: App {
                 Button("Underline") { CardTextFormat.toggle(.underline) }
                     .keyboardShortcut("u")
             }
+            CommandGroup(after: .help) {
+                Button("Welcome to Caddy") { ui.isShowingWelcome = true }
+            }
         }
     }
 }
