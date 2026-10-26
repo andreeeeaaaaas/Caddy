@@ -212,7 +212,7 @@ private struct BarButtonStyle: ButtonStyle {
 }
 
 /// A dark bar button that lifts and lightens on hover, and presses in with a
-/// springy release on click.
+/// firm spring that settles with a slight bounce.
 private struct BarButton: View {
     let configuration: ButtonStyleConfiguration
     let width: CGFloat
@@ -238,7 +238,7 @@ private struct BarButton: View {
             .opacity(isEnabled ? 1 : 0.4)
             .contentShape(.rect(cornerRadius: 16))
             .onHover { isHovering = $0 }
-            .animation(.spring(duration: 0.3, bounce: 0.45), value: isPressed)
+            .animation(.spring(duration: 0.25, bounce: 0.2), value: isPressed)
             .animation(CaddyStyle.hover, value: isHovered)
     }
 }
