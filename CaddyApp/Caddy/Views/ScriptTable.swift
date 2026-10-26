@@ -72,6 +72,7 @@ struct ScriptTable: View {
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.contentSpace)) } action: { layout.rows[row.id] = $0 }
                     }
                 }
+                .scrollTargetLayout()
                 .padding(.horizontal, Self.inset)
                 .padding(.vertical, 6)
                 .coordinateSpace(.named(Self.contentSpace))
@@ -817,7 +818,18 @@ private struct GridScroller<Content: View>: View {
     let onScroll: () -> Void
     @ViewBuilder let content: Content
 
-    @State private var scroll = ScrollPosition()
+    @State private var scroll: ScrollPosition
+
+    init(selection: ScriptRow.ID?, autoScrollSpeed: Int, layout: GridLayout, onScroll: @escaping () -> Void, @ViewBuilder content: () -> Content) {
+        self.selection = selection
+        self.autoScrollSpeed = autoScrollSpeed
+        self.layout = layout
+        self.onScroll = onScroll
+        self.content = content()
+        // Opens on the selected section, coming from playback, without
+        // drawing the top first and jumping.
+        _scroll = State(initialValue: selection.map { ScrollPosition(id: $0, anchor: .top) } ?? ScrollPosition())
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
