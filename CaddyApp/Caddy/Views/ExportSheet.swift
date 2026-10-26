@@ -8,6 +8,7 @@ struct ExportSheet: View {
     var title = ""
     /// The script's project.
     var project = ""
+    var created = Date()
     var fps: Double = 25
 
     @Environment(\.dismiss) private var dismiss
@@ -127,8 +128,7 @@ struct ExportSheet: View {
 
     private func write(to url: URL, options: ExportOptions) async {
         var document = Exporter.document(title: title.isEmpty ? "Script" : title, folder: project, details: details,
-                                         rows: rows, fps: fps, options: options)
-        document.logo = Exporter.logo()
+                                         created: created, rows: rows, fps: fps, options: options)
         if options.includeThumbnails, let videoURL = script.videoURL {
             let frames = await Exporter.frames(from: videoURL, at: document.sections.map(\.time))
             for index in document.sections.indices {
@@ -136,9 +136,15 @@ struct ExportSheet: View {
             }
         }
         guard !Task.isCancelled else { return }
-        let data = switch options.format {
-        case .docx: DocxWriter.data(for: document)
-        case .pdf: PDFWriter.data(for: document)
+        let data: Data
+        do {
+            data = switch options.format {
+            case .docx: try DocxWriter.data(for: document)
+            case .pdf: PDFWriter.data(for: document)
+            }
+        } catch {
+            failure = "Couldn't export the script. \(error.localizedDescription)"
+            return
         }
         do {
             try data.write(to: url, options: .atomic)

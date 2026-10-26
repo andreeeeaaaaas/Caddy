@@ -1,340 +1,493 @@
 import Foundation
 
-/// Writes an export as a Word document: OOXML parts zipped into a `.docx`.
-/// Laid out like an Apple document: BentonSansF, Apple's greys, hairlines
-/// instead of a grid, and the frog logo bottom right of every page.
+/// Writes an export as a Word document by filling in the CAD script template,
+/// `Templates/CADScript.docx`, which is made in Word, so the layout is changed
+/// there rather than here.
+///
+/// - `{Client}`, `{Asset name}` and `{Date created …}` anywhere in the body,
+///   header or footer become the folder, the script's name and the day it was
+///   created. Not in a folder, `{Client}` is the script's name, or left out
+///   (with what separates it) where the asset name follows it.
+/// - The table's first row that isn't a repeated header is copied once per
+///   section: the cell holding a number gets the section's, the one holding a
+///   picture its frame (same width, the frame's shape), and the one holding
+///   the script gets its elements. A paragraph with a `{…}` placeholder is the
+///   pattern for scene descriptions, one starting `LABEL:` for that label
+///   (VO, SUPER…), and the first `LABEL:` one for labels it doesn't have.
+/// - Without thumbnails the frame column is taken out, the script column
+///   widened to fill it, and rows no longer kept as tall as a frame.
+/// - A picture anchored after the table (the logo) is pinned to the top of
+///   the bottom margin, so it stays where the template has it however long
+///   the table runs.
 nonisolated enum DocxWriter {
-    static func data(for document: ExportDocument) -> Data {
+    enum Failure: LocalizedError {
+        case noTemplate
+        case damagedTemplate
+
+        var errorDescription: String? {
+            switch self {
+            case .noTemplate: "The Word template is missing from the app."
+            case .damagedTemplate: "The Word template couldn't be read."
+            }
+        }
+    }
+
+    static func data(for document: ExportDocument) throws -> Data {
+        guard let url = Bundle.main.url(forResource: "CADScript", withExtension: "docx"),
+              let template = try? Data(contentsOf: url) else { throw Failure.noTemplate }
+        return try data(for: document, template: template)
+    }
+
+    static func data(for document: ExportDocument, template: Data) throws -> Data {
+        guard let entries = try? ZipReader.entries(of: template) else { throw Failure.damagedTemplate }
+        var files = Dictionary(entries.map { ($0.path, $0.data) }, uniquingKeysWith: { first, _ in first })
+        var order = entries.map(\.path)
+
+        func xml(_ path: String) throws -> XMLDocument {
+            guard let data = files[path], let xml = try? XMLDocument(data: data, options: [.nodePreserveWhitespace])
+            else { throw Failure.damagedTemplate }
+            return xml
+        }
+        let main = try xml("word/document.xml")
+        let relationships = try xml("word/_rels/document.xml.rels")
+        let contentTypes = try xml("[Content_Types].xml")
+        guard let body = main.rootElement()?.children("w:body").first,
+              let types = contentTypes.rootElement(),
+              let links = relationships.rootElement() else { throw Failure.damagedTemplate }
+
+        // Placeholders, in the body and every header and footer.
+        let headersAndFooters = try order
+            .filter { $0.hasPrefix("word/header") || $0.hasPrefix("word/footer") }
+            .filter { $0.hasSuffix(".xml") }
+            .map { ($0, try xml($0)) }
+        for root in [main] + headersAndFooters.map(\.1) {
+            guard let root = root.rootElement() else { continue }
+            for paragraph in root.descendants("w:p") {
+                fillPlaceholders(in: paragraph, document: document)
+            }
+        }
+
+        // The table's rows, one per section.
+        var frames: [(path: String, id: String, data: Data)] = []
+        let tables = body.descendants("w:tbl")
+        guard let table = tables.first(where: { !$0.descendants("w:tblHeader").isEmpty }) ?? tables.first,
+              let prototype = table.children("w:tr").first(where: { !isHeader($0) }) else { throw Failure.damagedTemplate }
+        var roles = prototype.children("w:tc").map(role)
+        if !document.options.includeThumbnails, let frame = roles.firstIndex(of: .frame),
+           let script = roles.firstIndex(of: .script) {
+            removeColumn(frame, wideningColumn: script, of: table, rows: table.children("w:tr"))
+            roles.remove(at: frame)
+        }
+        for row in table.children("w:tr") where !isHeader(row) {
+            row.detach()
+        }
+        for (index, section) in document.sections.enumerated() {
+            guard let row = prototype.copy() as? XMLElement else { continue }
+            for (cell, role) in zip(row.children("w:tc"), roles) {
+                switch role {
+                case .number:
+                    setText(of: cell, to: "\(index + 1)")
+                case .frame:
+                    guard let frame = section.frame else {
+                        for run in cell.descendants("w:r") where !run.descendants("w:drawing").isEmpty {
+                            run.detach()
+                        }
+                        continue
+                    }
+                    let id = "rIdCaddyFrame\(index + 1)"
+                    frames.append(("word/media/caddy-frame\(index + 1).jpeg", id, frame.data))
+                    fillFrame(in: cell, relationship: id, image: frame, number: index + 1)
+                case .script:
+                    fillScript(in: cell, lines: section.script)
+                case .other:
+                    break
+                }
+            }
+            table.addChild(row)
+        }
+
+        pinTrailingAnchors(in: body, after: table)
+
+        // Frames in, and the template's sample pictures out once nothing shows them.
+        for frame in frames {
+            files[frame.path] = frame.data
+            order.append(frame.path)
+            links.addChild(element("Relationship", [
+                "Id": frame.id,
+                "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+                "Target": String(frame.path.dropFirst("word/".count)),
+            ]))
+        }
+        setDefault(in: types, extension: "jpeg", type: "image/jpeg")
+        let mainText = main.xmlString
+        for link in links.children("Relationship") where link.value(of: "Type")?.hasSuffix("/image") == true {
+            guard let id = link.value(of: "Id"), let target = link.value(of: "Target"),
+                  !mainText.contains("\"\(id)\"") else { continue }
+            link.detach()
+            let path = "word/" + target
+            let elsewhere = order.contains { other in
+                other.hasSuffix(".rels") && other != "word/_rels/document.xml.rels"
+                    && files[other].map { String(decoding: $0, as: UTF8.self).contains(target) } == true
+            }
+            guard !elsewhere else { continue }
+            files[path] = nil
+            order.removeAll { $0 == path }
+            types.children("Override").filter { $0.value(of: "PartName") == "/" + path }.forEach { $0.detach() }
+        }
+
+        // The title in the file's properties.
+        if let core = try? xml("docProps/core.xml"), let properties = core.rootElement() {
+            properties.children("dc:title").forEach { $0.detach() }
+            let title = XMLElement(name: "dc:title", stringValue: clean(document.title))
+            properties.insertChild(title, at: 0)
+            files["docProps/core.xml"] = core.xmlData(options: [.nodeCompactEmptyElement])
+        }
+
+        files["word/document.xml"] = main.xmlData(options: [.nodeCompactEmptyElement])
+        files["word/_rels/document.xml.rels"] = relationships.xmlData(options: [.nodeCompactEmptyElement])
+        files["[Content_Types].xml"] = contentTypes.xmlData(options: [.nodeCompactEmptyElement])
+        for (path, xml) in headersAndFooters {
+            files[path] = xml.xmlData(options: [.nodeCompactEmptyElement])
+        }
+
+        // Content types first, as Word writes them.
         var zip = ZipWriter()
-        let frames = document.sections.enumerated().compactMap { index, section in
-            section.frame.map { (index: index, frame: $0) }
-        }
-        zip.add("[Content_Types].xml", contentTypes)
-        zip.add("_rels/.rels", packageRelationships)
-        zip.add("docProps/core.xml", coreProperties(title: document.title))
-        zip.add("word/styles.xml", styles)
-        zip.add("word/_rels/document.xml.rels", documentRelationships(frames: frames.map(\.index)))
-        zip.add("word/document.xml", body(for: document))
-        zip.add("word/footer1.xml", footer(for: document))
-        zip.add("word/_rels/footer1.xml.rels", footerRelationships(hasLogo: document.logo != nil))
-        for (index, frame) in frames {
-            zip.add("word/media/frame\(index + 1).\(frame.format.rawValue)", frame.data)
-        }
-        if let logo = document.logo {
-            zip.add("word/media/logo.\(logo.format.rawValue)", logo.data)
+        let contentTypesPath = "[Content_Types].xml"
+        for path in [contentTypesPath] + order.filter({ $0 != contentTypesPath }) {
+            if let data = files[path] { zip.add(path, data) }
         }
         return zip.finish()
     }
 
-    // MARK: Layout
+    // MARK: Placeholders
 
-    /// Twips per point.
-    private static let twips = 20.0
-    /// EMUs per point, for drawings.
-    private static let emus = 12_700.0
+    /// The day a script was created, as the template asks: 26 Oct 2026.
+    private static func dateText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "dd MMM yyyy"
+        return formatter.string(from: date)
+    }
 
-    /// US Letter less 0.75" each side.
-    private static let contentWidth = 7.0 * 72
-    private static let frameColumn = 2.45 * 72
-    /// Every cell's padding, as Pages tables have.
-    private static let padding = 4.0
-    /// Between the frame and the script.
-    private static let gutter = 12.0
-    private static let cornerRadius = 5.0
-    /// The frog tile in the footer, flush with the bottom of the page.
-    private static let logoSize = 55.0
-
-    // Apple's text, secondary, tertiary and separator greys.
-    private static let ink = "1D1D1F"
-    private static let secondary = "6E6E73"
-    private static let tertiary = "86868B"
-    private static let hairline = "D2D2D7"
-
-    /// Word names BentonSansF by its legacy families: Book holds regular,
-    /// italic, bold and bold italic; Medium is a family of its own.
-    private static let book = "BentonSansF Book"
-    private static let medium = "BentonSansF Medium"
-
-    // MARK: Document
-
-    private static func body(for document: ExportDocument) -> String {
-        let hasFrames = document.options.includeThumbnails
-        var xml = """
-        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-        <w:document \(namespaces)><w:body>
-        """
-
-        // Title block: the folder (the client) as the title, the video under it.
-        // The script's own name is in the footer.
-        let heading = document.folder.isEmpty ? document.title : document.folder
-        xml += paragraph(runs: [run(heading, bold: true, size: 25, color: ink, tracking: -0.3)], after: 6)
-        if !document.details.isEmpty {
-            xml += paragraph(runs: [run(document.details, size: 10, color: secondary)], after: 30)
-        }
-
-        // "Frame" in sentence case and "SCRIPT" in capitals, as the template has them.
-        let columns: [(title: String, width: Double)] = hasFrames
-            ? [("Frame", frameColumn), ("SCRIPT", contentWidth - frameColumn)]
-            : [("SCRIPT", contentWidth)]
-        xml += "<w:tbl><w:tblPr><w:tblW w:w=\"\(Int(contentWidth * twips))\" w:type=\"dxa\"/><w:tblBorders>"
-        for edge in ["top", "left", "right", "insideV"] { xml += "<w:\(edge) w:val=\"none\" w:sz=\"0\" w:space=\"0\" w:color=\"auto\"/>" }
-        xml += "<w:bottom \(border(hairline, 0.5))/><w:insideH \(border(hairline, 0.5))/>"
-        xml += "</w:tblBorders><w:tblLayout w:type=\"fixed\"/><w:tblCellMar>"
-        for edge in ["top", "left", "bottom", "right"] { xml += "<w:\(edge) w:w=\"0\" w:type=\"dxa\"/>" }
-        xml += "</w:tblCellMar></w:tblPr><w:tblGrid>"
-        for column in columns { xml += "<w:gridCol w:w=\"\(Int(column.width * twips))\"/>" }
-        xml += "</w:tblGrid>"
-
-        // Small grey labels over a hairline, repeated at the top of every page.
-        xml += "<w:tr><w:trPr><w:tblHeader/><w:cantSplit/></w:trPr>"
-        for (index, column) in columns.enumerated() {
-            let label = paragraph(runs: [run(column.title, font: medium, size: 7.5, color: tertiary)])
-            xml += cell(width: column.width, bottom: padding, right: hasFrames && index == 0 ? gutter : padding, label)
-        }
-        xml += "</w:tr>"
-
-        for (index, section) in document.sections.enumerated() {
-            xml += "<w:tr><w:trPr><w:cantSplit/></w:trPr>"
-            // The section number and timecode, above the frame.
-            let caption = paragraph(runs: [
-                run(String(format: "%02d", index + 1), bold: true, size: 8, color: ink),
-                run("  " + section.timecode, size: 8, color: tertiary),
-            ], after: 3)
-            if hasFrames {
-                let imageWidth = frameColumn - padding - gutter
-                xml += cell(width: frameColumn, top: padding, bottom: padding, right: gutter,
-                            caption + frame(section.frame, index: index, width: imageWidth))
+    private static func fillPlaceholders(in paragraph: XMLElement, document: ExportDocument) {
+        let texts = ownTexts(of: paragraph)
+        joinSplitPlaceholders(texts)
+        let joined = texts.map { $0.stringValue ?? "" }.joined().lowercased()
+        guard joined.contains("{") else { return }
+        let hasAsset = joined.contains("{asset")
+        // Out of a folder, the client is left out beside the asset name, or
+        // replaced by the script's name where it stands alone.
+        let dropClient = document.folder.isEmpty && hasAsset
+        let client = document.folder.isEmpty ? document.title : document.folder
+        var droppingSeparator = false
+        for text in texts {
+            var value = text.stringValue ?? ""
+            if droppingSeparator {
+                if value.trimmingCharacters(in: separators).isEmpty, !value.isEmpty {
+                    text.setText("")
+                    continue
+                }
+                droppingSeparator = false
             }
-            var script = hasFrames ? "" : caption
-            for line in section.script {
-                script += scriptLine(line)
+            guard value.contains("{") else { continue }
+            if dropClient {
+                value = value.replacing(/\{\s*[Cc]lient[^{}]*\}[\s\-–—·|:]*/, with: "")
+                droppingSeparator = value.isEmpty
             }
-            xml += cell(width: contentWidth - (hasFrames ? frameColumn : 0), top: padding, bottom: padding, right: padding, script)
-            xml += "</w:tr>"
+            value = value.replacing(/\{([^{}]*)\}/) { match in
+                let key = match.output.1.lowercased().trimmingCharacters(in: .whitespaces)
+                if key.hasPrefix("client") { return client }
+                if key.hasPrefix("asset") { return document.title }
+                if key.hasPrefix("date") { return dateText(document.created) }
+                return String(match.output.0)
+            }
+            text.setText(clean(value))
         }
-        xml += "</w:tbl>"
-
-        // A table can't end the body. The section is US Letter, 0.75" each side,
-        // with the footer text 0.42" from the bottom.
-        xml += """
-        <w:p/><w:sectPr><w:footerReference w:type="default" r:id="rIdFooter"/>\
-        <w:pgSz w:w="12240" w:h="15840"/>\
-        <w:pgMar w:top="1224" w:right="1080" w:bottom="1368" w:left="1080" w:header="648" w:footer="600" w:gutter="0"/>\
-        </w:sectPr></w:body></w:document>
-        """
-        return xml
     }
 
-    /// A bold label and the text after it, one paragraph per element.
-    private static func scriptLine(_ line: ExportLine) -> String {
-        let label = run("\(line.label): ", bold: true, size: 10, color: ink)
-        let text = line.text.runs.map { run($0.text, bold: $0.bold, italic: $0.italic, underline: $0.underline, size: 10, color: ink) }
-        return "<w:p><w:pPr><w:spacing w:after=\"\(Int(4 * twips))\" w:line=\"288\" w:lineRule=\"auto\"/></w:pPr>\(label)\(text.joined())</w:p>"
-    }
+    private static let separators = CharacterSet(charactersIn: " -–—·|:")
 
-    private static func frame(_ frame: ExportImage?, index: Int, width: Double) -> String {
-        guard let frame else {
-            return paragraph(runs: [run("No frame", italic: true, size: 9, color: tertiary)])
+    /// Word splits text into runs as it's edited, so `{Client}` can end up as
+    /// `{`, `Client`, `}`. Each placeholder is gathered into the run it starts in.
+    private static func joinSplitPlaceholders(_ texts: [XMLElement]) {
+        for (index, text) in texts.enumerated() {
+            var value = text.stringValue ?? ""
+            guard let open = value.lastIndex(of: "{"), !value[open...].contains("}"),
+                  texts[(index + 1)...].contains(where: { $0.stringValue?.contains("}") == true }) else { continue }
+            for next in texts[(index + 1)...] {
+                let rest = next.stringValue ?? ""
+                if let close = rest.firstIndex(of: "}") {
+                    value += rest[...close]
+                    next.setText(String(rest[rest.index(after: close)...]))
+                    break
+                }
+                value += rest
+                next.setText("")
+            }
+            text.setText(value)
         }
-        let height = frame.height(forWidth: width)
-        let corner = Int(cornerRadius / min(width, height) * 100_000)
-        return paragraph(runs: [drawing(id: index + 1, name: "Frame \(index + 1)", relationship: "rIdFrame\(index + 1)",
-                                        width: width, height: height, corner: corner)])
     }
 
-    /// A picture: inline, or with `anchor` set, placed on the page out of the
-    /// text's way. `corner` rounds it, in thousandths of a percent of its shorter side.
-    private static func drawing(id: Int, name: String, relationship: String, width: Double, height: Double,
-                                corner: Int = 0, anchor: String? = nil) -> String {
-        let cx = Int(width * emus), cy = Int(height * emus)
-        let geometry = corner > 0
-            ? "<a:prstGeom prst=\"roundRect\"><a:avLst><a:gd name=\"adj\" fmla=\"val \(corner)\"/></a:avLst></a:prstGeom>"
-            : "<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>"
-        let picture = """
-        <wp:docPr id="\(id)" name="\(escape(name))"/>\
-        <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>\
-        <a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>\
-        <pic:nvPicPr><pic:cNvPr id="\(id)" name="\(escape(name))"/><pic:cNvPicPr/></pic:nvPicPr>\
-        <pic:blipFill><a:blip r:embed="\(relationship)"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>\
-        <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="\(cx)" cy="\(cy)"/></a:xfrm>\(geometry)</pic:spPr>\
-        </pic:pic></a:graphicData></a:graphic>
-        """
-        if let anchor {
-            return """
-            <w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251659264" \
-            behindDoc="0" locked="1" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/>\(anchor)\
-            <wp:extent cx="\(cx)" cy="\(cy)"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>\(picture)\
-            </wp:anchor></w:drawing></w:r>
-            """
+    /// The paragraph's own text, not that of text boxes inside it.
+    private static func ownTexts(of paragraph: XMLElement) -> [XMLElement] {
+        paragraph.descendants("w:t").filter { text in
+            var node = text.parent
+            while let current = node as? XMLElement, current.name != "w:p" { node = current.parent }
+            return node === paragraph
         }
-        return """
-        <w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">\
-        <wp:extent cx="\(cx)" cy="\(cy)"/>\(picture)</wp:inline></w:drawing></w:r>
-        """
     }
 
-    // MARK: Footer
+    // MARK: Table
 
-    /// The script's name and page number on the left. The frog tile sits on the
-    /// bottom edge of the page, its right side on the right margin.
-    private static func footer(for document: ExportDocument) -> String {
-        let style = { (text: String) in run(text, size: 10, color: ink) }
-        var runs = [style(document.title + "   ·   Page "), field("PAGE", style("1")), style(" of "), field("NUMPAGES", style("1"))]
-        if document.logo != nil {
-            let anchor = "<wp:positionH relativeFrom=\"margin\"><wp:align>right</wp:align></wp:positionH>"
-                + "<wp:positionV relativeFrom=\"page\"><wp:align>bottom</wp:align></wp:positionV>"
-            runs.append(drawing(id: 1000, name: "frog", relationship: "rIdLogo", width: logoSize, height: logoSize, anchor: anchor))
+    private enum Role { case number, frame, script, other }
+
+    private static func isHeader(_ row: XMLElement) -> Bool {
+        !row.children("w:trPr").flatMap { $0.children("w:tblHeader") }.isEmpty
+    }
+
+    /// What a cell of the pattern row holds.
+    private static func role(of cell: XMLElement) -> Role {
+        if !cell.descendants("w:drawing").isEmpty { return .frame }
+        let text = cell.descendants("w:t").compactMap(\.stringValue).joined().trimmingCharacters(in: .whitespaces)
+        if text.contains("{") || text.contains(":") { return .script }
+        if !text.isEmpty, text.allSatisfy(\.isNumber) { return .number }
+        return .other
+    }
+
+    private static func removeColumn(_ column: Int, wideningColumn target: Int, of table: XMLElement, rows: [XMLElement]) {
+        if let grid = table.children("w:tblGrid").first {
+            let columns = grid.children("w:gridCol")
+            if columns.indices.contains(column), columns.indices.contains(target) {
+                let width = Int(columns[column].value(of: "w:w") ?? "") ?? 0
+                columns[target].setValue(String((Int(columns[target].value(of: "w:w") ?? "") ?? 0) + width), of: "w:w")
+                columns[column].detach()
+            }
         }
-        return """
-        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-        <w:ftr \(namespaces)><w:p>\(runs.joined())</w:p></w:ftr>
-        """
+        for row in rows {
+            let cells = row.children("w:tc")
+            guard cells.indices.contains(column), cells.indices.contains(target) else { continue }
+            let width = { (cell: XMLElement) in cell.children("w:tcPr").first?.children("w:tcW").first }
+            if let removed = width(cells[column]), let widened = width(cells[target]) {
+                let sum = (Int(removed.value(of: "w:w") ?? "") ?? 0) + (Int(widened.value(of: "w:w") ?? "") ?? 0)
+                widened.setValue(String(sum), of: "w:w")
+            }
+            cells[column].detach()
+            // The row's least height was the frame's.
+            row.children("w:trPr").first?.children("w:trHeight").forEach { $0.detach() }
+        }
     }
 
-    private static func field(_ instruction: String, _ placeholder: String) -> String {
-        "<w:fldSimple w:instr=\" \(instruction) \">\(placeholder)</w:fldSimple>"
+    private static func setText(of cell: XMLElement, to value: String) {
+        let texts = cell.descendants("w:t")
+        for (index, text) in texts.enumerated() {
+            text.setText(index == 0 ? value : "")
+        }
+    }
+
+    /// Points the cell's picture at the frame, as wide as the template's and as tall as the frame's shape needs.
+    private static func fillFrame(in cell: XMLElement, relationship: String, image: ExportImage, number: Int) {
+        guard let drawing = cell.descendants("w:drawing").first else { return }
+        drawing.descendants("a:blip").first?.setValue(relationship, of: "r:embed")
+        drawing.descendants("a:srcRect").forEach { $0.detach() }
+        let extents = drawing.descendants("wp:extent") + drawing.descendants("a:ext")
+        for extent in extents {
+            guard let width = Double(extent.value(of: "cx") ?? "") else { continue }
+            extent.setValue(String(Int(image.height(forWidth: width))), of: "cy")
+        }
+        // Drawing IDs must be unique in the document.
+        let id = String(1_073_742_000 + number)
+        for properties in drawing.descendants("wp:docPr") + drawing.descendants("pic:cNvPr") {
+            properties.setValue(id, of: "id")
+            properties.setValue("Frame \(number)", of: "name")
+            properties.setValue("Frame \(number)", of: "descr")
+        }
+    }
+
+    private static func fillScript(in cell: XMLElement, lines: [ExportLine]) {
+        let paragraphs = cell.children("w:p")
+        guard let first = paragraphs.first else { return }
+        var description: XMLElement?
+        var labelled: [String: XMLElement] = [:]
+        var firstLabelled: XMLElement?
+        for paragraph in paragraphs {
+            let text = ownTexts(of: paragraph).compactMap(\.stringValue).joined()
+            if text.contains("{") {
+                description = description ?? paragraph
+            } else if let match = text.firstMatch(of: /^\s*([^:{}]+):/) {
+                let label = match.output.1.trimmingCharacters(in: .whitespaces).uppercased()
+                labelled[label] = labelled[label] ?? paragraph
+                firstLabelled = firstLabelled ?? paragraph
+            }
+        }
+        paragraphs.forEach { $0.detach() }
+
+        for line in lines {
+            if line.label == ScriptElement.Kind.scene.exportLabel {
+                let pattern = description ?? firstLabelled ?? first
+                let paragraph = emptied(pattern)
+                let base = runProperties(of: pattern, where: { $0.contains("{") })
+                appendRuns(of: line.text, to: paragraph, properties: base)
+                cell.addChild(paragraph)
+            } else {
+                let pattern = labelled[line.label] ?? firstLabelled ?? description ?? first
+                let paragraph = emptied(pattern)
+                let label = runProperties(of: pattern, where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty })
+                let text = runProperties(of: pattern, last: true, where: { !$0.trimmingCharacters(in: separators).isEmpty })
+                paragraph.addChild(run(properties: label, text: "\(line.label):"))
+                paragraph.addChild(run(properties: text, text: " "))
+                appendRuns(of: line.text, to: paragraph, properties: text)
+                cell.addChild(paragraph)
+            }
+        }
+        // A cell holds at least one paragraph, or Word won't open the file.
+        if lines.isEmpty {
+            cell.addChild(emptied(description ?? first))
+        }
+    }
+
+    /// The paragraph with its properties and nothing else.
+    private static func emptied(_ paragraph: XMLElement) -> XMLElement {
+        let copy = paragraph.copy() as! XMLElement
+        for child in copy.children ?? [] where child.name != "w:pPr" {
+            child.detach()
+        }
+        return copy
+    }
+
+    /// The properties of the first (or last) run whose text passes `test`.
+    private static func runProperties(of paragraph: XMLElement, last: Bool = false, where test: (String) -> Bool) -> XMLElement? {
+        let runs = paragraph.children("w:r").filter { run in
+            test(run.children("w:t").compactMap(\.stringValue).joined())
+        }
+        return (last ? runs.last : runs.first)?.children("w:rPr").first
+    }
+
+    /// The text's own bold, italic and underline go on top of the pattern's.
+    private static func appendRuns(of text: RichText, to paragraph: XMLElement, properties: XMLElement?) {
+        for part in text.runs {
+            let styled = (properties?.copy() as? XMLElement) ?? XMLElement(name: "w:rPr")
+            if part.bold { setProperty("w:b", in: styled); setProperty("w:bCs", in: styled) }
+            if part.italic { setProperty("w:i", in: styled); setProperty("w:iCs", in: styled) }
+            if part.underline { setProperty("w:u", value: "single", in: styled) }
+            paragraph.addChild(run(properties: styled, text: part.text))
+        }
+    }
+
+    /// A run with line breaks and tabs as Word's own.
+    private static func run(properties: XMLElement?, text: String) -> XMLElement {
+        let run = XMLElement(name: "w:r")
+        if let properties { run.addChild(properties.copy() as! XMLElement) }
+        for (index, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+            if index > 0 { run.addChild(XMLElement(name: "w:br")) }
+            for (index, piece) in line.split(separator: "\t", omittingEmptySubsequences: false).enumerated() {
+                if index > 0 { run.addChild(XMLElement(name: "w:tab")) }
+                guard !piece.isEmpty else { continue }
+                let text = XMLElement(name: "w:t")
+                text.setText(clean(String(piece)))
+                run.addChild(text)
+            }
+        }
+        return run
+    }
+
+    /// Run properties in the schema's order, which Word holds to.
+    private static let propertyOrder = [
+        "w:rStyle", "w:rFonts", "w:b", "w:bCs", "w:i", "w:iCs", "w:caps", "w:smallCaps", "w:strike", "w:dstrike",
+        "w:outline", "w:shadow", "w:emboss", "w:imprint", "w:noProof", "w:snapToGrid", "w:vanish", "w:webHidden",
+        "w:color", "w:spacing", "w:w", "w:kern", "w:position", "w:sz", "w:szCs", "w:highlight", "w:u", "w:effect",
+        "w:bdr", "w:shd", "w:fitText", "w:vertAlign", "w:rtl", "w:cs", "w:em", "w:lang", "w:eastAsianLayout",
+        "w:specVanish", "w:oMath",
+    ]
+
+    /// Sets a run property's value, adding it in its place if it isn't there.
+    private static func setProperty(_ name: String, value: String = "1", in properties: XMLElement) {
+        if let existing = properties.children(name).first {
+            existing.setValue(value, of: "w:val")
+            return
+        }
+        let property = element(name, ["w:val": value])
+        let rank = propertyOrder.firstIndex(of: name) ?? propertyOrder.count
+        let children = properties.children ?? []
+        let position = children.firstIndex { child in
+            (propertyOrder.firstIndex(of: child.name ?? "") ?? propertyOrder.count) > rank
+        } ?? children.count
+        properties.insertChild(property, at: position)
+    }
+
+    // MARK: Logo
+
+    /// Pictures anchored to a line after the table are moved to the top of the
+    /// bottom margin, where the template's sample table leaves them.
+    private static func pinTrailingAnchors(in body: XMLElement, after table: XMLElement) {
+        let section = body.descendants("w:sectPr").last
+        let pageHeight = section?.children("w:pgSz").first?.value(of: "w:h").flatMap(Int.init) ?? 15_840
+        let bottomMargin = section?.children("w:pgMar").first?.value(of: "w:bottom").flatMap(Int.init) ?? 1_440
+        let top = (pageHeight - bottomMargin) * 635 // EMUs per twip
+        let siblings = body.children ?? []
+        guard let start = siblings.firstIndex(where: { $0 === table }) else { return }
+        for case let sibling as XMLElement in siblings[(start + 1)...] {
+            for position in sibling.descendants("wp:positionV")
+            where ["line", "paragraph"].contains(position.value(of: "relativeFrom") ?? "") {
+                position.setValue("page", of: "relativeFrom")
+                position.children?.forEach { $0.detach() }
+                position.addChild(XMLElement(name: "wp:posOffset", stringValue: String(top)))
+            }
+        }
     }
 
     // MARK: Parts
 
-    private static let namespaces = """
-    xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" \
-    xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" \
-    xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" \
-    xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" \
-    xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"
-    """
-
-    /// `width` is in points.
-    private static func border(_ color: String, _ width: Double) -> String {
-        "w:val=\"single\" w:sz=\"\(Int(width * 8))\" w:space=\"0\" w:color=\"\(color)\""
-    }
-
-    /// Padding in points.
-    private static func cell(width: Double, top: Double = 0, left: Double = padding, bottom: Double = 0, right: Double = 0,
-                             _ content: String) -> String {
-        var xml = "<w:tc><w:tcPr><w:tcW w:w=\"\(Int(width * twips))\" w:type=\"dxa\"/>"
-        xml += "<w:tcMar><w:top w:w=\"\(Int(top * twips))\" w:type=\"dxa\"/><w:left w:w=\"\(Int(left * twips))\" w:type=\"dxa\"/>"
-        xml += "<w:bottom w:w=\"\(Int(bottom * twips))\" w:type=\"dxa\"/><w:right w:w=\"\(Int(right * twips))\" w:type=\"dxa\"/></w:tcMar>"
-        // A cell holds at least one paragraph, or Word won't open the file.
-        xml += "</w:tcPr>" + (content.isEmpty ? "<w:p/>" : content) + "</w:tc>"
-        return xml
-    }
-
-    /// `after` is the space below in points.
-    private static func paragraph(runs: [String], after: Double = 0) -> String {
-        let properties = after > 0 ? "<w:pPr><w:spacing w:after=\"\(Int(after * twips))\"/></w:pPr>" : ""
-        return "<w:p>" + properties + runs.joined() + "</w:p>"
-    }
-
-    /// `size` and `tracking` are in points. Every run names its font, since
-    /// Pages and Quick Look ignore the document's default.
-    /// Line breaks and tabs become Word's own.
-    private static func run(_ text: String, font: String = book, bold: Bool = false, italic: Bool = false, underline: Bool = false,
-                            size: Double? = nil, color: String? = nil, tracking: Double? = nil) -> String {
-        // In the schema's order, which Word holds to.
-        var properties = "<w:rFonts w:ascii=\"\(font)\" w:hAnsi=\"\(font)\" w:cs=\"\(font)\" w:eastAsia=\"\(font)\"/>"
-        if bold { properties += "<w:b/><w:bCs/>" }
-        if italic { properties += "<w:i/><w:iCs/>" }
-        if let color { properties += "<w:color w:val=\"\(color)\"/>" }
-        if let tracking { properties += "<w:spacing w:val=\"\(Int(tracking * twips))\"/>" }
-        if let size { properties += "<w:sz w:val=\"\(Int(size * 2))\"/><w:szCs w:val=\"\(Int(size * 2))\"/>" }
-        if underline { properties += "<w:u w:val=\"single\"/>" }
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map { line in
-            line.split(separator: "\t", omittingEmptySubsequences: false)
-                .map { "<w:t xml:space=\"preserve\">\(escape(String($0)))</w:t>" }
-                .joined(separator: "<w:tab/>")
+    private static func setDefault(in types: XMLElement, extension name: String, type: String) {
+        if let existing = types.children("Default").first(where: { $0.value(of: "Extension")?.lowercased() == name }) {
+            existing.setValue(type, of: "ContentType")
+        } else {
+            types.insertChild(element("Default", ["Extension": name, "ContentType": type]), at: 0)
         }
-        return "<w:r><w:rPr>\(properties)</w:rPr>" + lines.joined(separator: "<w:br/>") + "</w:r>"
     }
 
-    /// Escapes markup and drops control characters, which XML can't hold.
-    private static func escape(_ text: String) -> String {
-        var escaped = ""
-        for scalar in text.unicodeScalars {
-            switch scalar {
-            case "&": escaped += "&amp;"
-            case "<": escaped += "&lt;"
-            case ">": escaped += "&gt;"
-            case "\"": escaped += "&quot;"
-            case _ where scalar.value < 0x20: continue
-            case "\u{FFFE}", "\u{FFFF}": continue
-            default: escaped.unicodeScalars.append(scalar)
-            }
+    private static func element(_ name: String, _ attributes: KeyValuePairs<String, String>) -> XMLElement {
+        let element = XMLElement(name: name)
+        for (key, value) in attributes {
+            element.addAttribute(XMLNode.attribute(withName: key, stringValue: value) as! XMLNode)
         }
-        return escaped
+        return element
     }
 
-    private static let contentTypes = """
-    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-    <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\
-    <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\
-    <Default Extension="xml" ContentType="application/xml"/>\
-    <Default Extension="jpeg" ContentType="image/jpeg"/>\
-    <Default Extension="png" ContentType="image/png"/>\
-    <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>\
-    <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>\
-    <Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>\
-    <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>\
-    </Types>
-    """
+    /// Drops control characters, which XML can't hold.
+    private static func clean(_ text: String) -> String {
+        String(String.UnicodeScalarView(text.unicodeScalars.filter { $0.value >= 0x20 && $0 != "\u{FFFE}" && $0 != "\u{FFFF}" }))
+    }
+}
 
-    private static let packageRelationships = """
-    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-    <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\
-    <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>\
-    <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>\
-    </Relationships>
-    """
-
-    private static func coreProperties(title: String) -> String {
-        let now = ISO8601DateFormatter().string(from: .now)
-        return """
-        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-        <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" \
-        xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" \
-        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\
-        <dc:title>\(escape(title))</dc:title><dc:creator>Caddy</dc:creator>\
-        <dcterms:created xsi:type="dcterms:W3CDTF">\(now)</dcterms:created>\
-        </cp:coreProperties>
-        """
+nonisolated private extension XMLElement {
+    func children(_ name: String) -> [XMLElement] {
+        (children ?? []).compactMap { $0 as? XMLElement }.filter { $0.name == name }
     }
 
-    /// BentonSansF Book 10 pt in Apple's near-black.
-    private static let styles = """
-    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-    <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">\
-    <w:docDefaults><w:rPrDefault><w:rPr>\
-    <w:rFonts w:ascii="\(book)" w:hAnsi="\(book)" w:eastAsia="\(book)" w:cs="\(book)"/>\
-    <w:color w:val="\(ink)"/><w:sz w:val="20"/><w:szCs w:val="20"/><w:lang w:val="en-US"/>\
-    </w:rPr></w:rPrDefault>\
-    <w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault>\
-    </w:docDefaults>\
-    <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>\
-    </w:styles>
-    """
-
-    private static func documentRelationships(frames: [Int]) -> String {
-        var xml = """
-        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\
-        <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>\
-        <Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>
-        """
-        for index in frames {
-            xml += "<Relationship Id=\"rIdFrame\(index + 1)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/frame\(index + 1).jpeg\"/>"
+    func descendants(_ name: String) -> [XMLElement] {
+        var found: [XMLElement] = []
+        for case let child as XMLElement in children ?? [] {
+            if child.name == name { found.append(child) }
+            found += child.descendants(name)
         }
-        return xml + "</Relationships>"
+        return found
     }
 
-    private static func footerRelationships(hasLogo: Bool) -> String {
-        var xml = """
-        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-        """
-        if hasLogo {
-            xml += "<Relationship Id=\"rIdLogo\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/logo.png\"/>"
+    func value(of attribute: String) -> String? {
+        self.attribute(forName: attribute)?.stringValue
+    }
+
+    func setValue(_ value: String, of attribute: String) {
+        if let existing = self.attribute(forName: attribute) {
+            existing.stringValue = value
+        } else {
+            addAttribute(XMLNode.attribute(withName: attribute, stringValue: value) as! XMLNode)
         }
-        return xml + "</Relationships>"
+    }
+
+    /// A `w:t`'s text, kept with its spaces.
+    func setText(_ text: String) {
+        stringValue = text
+        setValue("preserve", of: "xml:space")
     }
 }

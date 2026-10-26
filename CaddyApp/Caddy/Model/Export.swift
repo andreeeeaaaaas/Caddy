@@ -1,4 +1,3 @@
-import AppKit
 import AVFoundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -39,10 +38,10 @@ nonisolated struct ExportDocument: Sendable {
     var folder: String
     /// The video's name.
     var details: String
+    /// When the script was made.
+    var created: Date
     var options: ExportOptions
     var sections: [ExportSection]
-    /// The frog tile, set in the bottom right of every page.
-    var logo: ExportImage?
 
     /// The folder and details on one line.
     var subtitle: String {
@@ -86,14 +85,9 @@ nonisolated struct ExportLine: Sendable {
     var text: RichText
 }
 
-/// A section's frame as a JPEG, or the logo as a PNG.
+/// A section's frame as a JPEG.
 nonisolated struct ExportImage: Sendable {
-    enum Format: String, Sendable {
-        case jpeg, png
-    }
-
     var data: Data
-    var format = Format.jpeg
     var width: Int
     var height: Int
 
@@ -106,7 +100,8 @@ nonisolated struct ExportImage: Sendable {
 nonisolated enum Exporter {
     /// Lays out the rows, without frames. Empty elements are left out, and
     /// scene descriptions and suggestions unless the options include them.
-    static func document(title: String, folder: String, details: String, rows: [ScriptRow], fps: Double, options: ExportOptions) -> ExportDocument {
+    static func document(title: String, folder: String, details: String, created: Date, rows: [ScriptRow], fps: Double,
+                         options: ExportOptions) -> ExportDocument {
         let sections = rows.map { row in
             let elements = row.elements.filter { element in
                 !element.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -119,38 +114,8 @@ nonisolated enum Exporter {
                 script: elements.map { ExportLine(label: $0.kind.exportLabel, text: $0.richText) }
             )
         }
-        return ExportDocument(title: title, folder: folder, details: details, options: options, sections: sections)
-    }
-
-    /// The frog tile: the logo in white on a black square, `points` wide at 8×.
-    @MainActor
-    static func logo(_ image: NSImage? = NSImage(named: "FrogLogo"), points: Double = 55) -> ExportImage? {
-        guard let image, image.size.width > 0 else { return nil }
-        let side = Int(points * 8)
-        guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side,
-                                            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                                            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
-              let context = NSGraphicsContext(bitmapImageRep: bitmap) else { return nil }
-        let previous = NSGraphicsContext.current
-        NSGraphicsContext.current = context
-        let tile = NSRect(x: 0, y: 0, width: side, height: side)
-        NSColor.black.setFill()
-        tile.fill()
-        // The frog fills 82% of the tile's width, centred.
-        let width = Double(side) * 0.82
-        let height = width * image.size.height / image.size.width
-        let frog = NSRect(x: (Double(side) - width) / 2, y: (Double(side) - height) / 2, width: width, height: height)
-        let white = NSImage(size: frog.size, flipped: false) { rect in
-            image.draw(in: rect)
-            NSColor.white.set()
-            rect.fill(using: .sourceAtop)
-            return true
-        }
-        white.draw(in: frog)
-        context.flushGraphics()
-        NSGraphicsContext.current = previous
-        guard let png = bitmap.representation(using: .png, properties: [:]) else { return nil }
-        return ExportImage(data: png, format: .png, width: side, height: side)
+        return ExportDocument(title: title, folder: folder, details: details, created: created, options: options,
+                              sections: sections)
     }
 
     /// Grabs each section's frame from the video. Frames it can't grab are left out.
