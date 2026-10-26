@@ -37,11 +37,11 @@ nonisolated struct ExportDocument: Sendable {
     var title: String
     /// The script's folder, if it's in one.
     var folder: String
-    /// The video's file name and the date.
+    /// The video's name.
     var details: String
     var options: ExportOptions
     var sections: [ExportSection]
-    /// The frog logo, set in the bottom right of every page.
+    /// The frog tile, set in the bottom right of every page.
     var logo: ExportImage?
 
     /// The folder and details on one line.
@@ -122,27 +122,35 @@ nonisolated enum Exporter {
         return ExportDocument(title: title, folder: folder, details: details, options: options, sections: sections)
     }
 
-    /// The frog logo as a PNG in Apple's secondary grey, `points` wide at 4×.
+    /// The frog tile: the logo in white on a black square, `points` wide at 8×.
     @MainActor
-    static func logo(_ image: NSImage? = NSImage(named: "FrogLogo"), points: Double = 30) -> ExportImage? {
+    static func logo(_ image: NSImage? = NSImage(named: "FrogLogo"), points: Double = 55) -> ExportImage? {
         guard let image, image.size.width > 0 else { return nil }
-        let width = Int(points * 4)
-        let height = Int((points * image.size.height / image.size.width * 4).rounded())
-        guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
+        let side = Int(points * 8)
+        guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side,
                                             bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                                             colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
               let context = NSGraphicsContext(bitmapImageRep: bitmap) else { return nil }
         let previous = NSGraphicsContext.current
         NSGraphicsContext.current = context
-        let rect = NSRect(x: 0, y: 0, width: width, height: height)
-        image.draw(in: rect)
-        // Tints the logo's shape, keeping its holes clear.
-        NSColor(srgbRed: 0x86 / 255, green: 0x86 / 255, blue: 0x8B / 255, alpha: 1).set()
-        rect.fill(using: .sourceAtop)
+        let tile = NSRect(x: 0, y: 0, width: side, height: side)
+        NSColor.black.setFill()
+        tile.fill()
+        // The frog fills 82% of the tile's width, centred.
+        let width = Double(side) * 0.82
+        let height = width * image.size.height / image.size.width
+        let frog = NSRect(x: (Double(side) - width) / 2, y: (Double(side) - height) / 2, width: width, height: height)
+        let white = NSImage(size: frog.size, flipped: false) { rect in
+            image.draw(in: rect)
+            NSColor.white.set()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+        white.draw(in: frog)
         context.flushGraphics()
         NSGraphicsContext.current = previous
         guard let png = bitmap.representation(using: .png, properties: [:]) else { return nil }
-        return ExportImage(data: png, format: .png, width: width, height: height)
+        return ExportImage(data: png, format: .png, width: side, height: side)
     }
 
     /// Grabs each section's frame from the video. Frames it can't grab are left out.

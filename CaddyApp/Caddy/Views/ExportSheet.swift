@@ -100,11 +100,9 @@ struct ExportSheet: View {
         return name.isEmpty ? "Script" : name
     }
 
-    /// The video's file name and today's date, under the title.
+    /// The video's name, without its extension, under the title.
     private var details: String {
-        [script.videoURL?.lastPathComponent ?? "", Date.now.formatted(date: .long, time: .omitted)]
-            .filter { !$0.isEmpty }
-            .joined(separator: "  ·  ")
+        script.videoURL?.deletingPathExtension().lastPathComponent ?? ""
     }
 
     private func chooseFile() {
