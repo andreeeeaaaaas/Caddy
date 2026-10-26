@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project note
+
+The Obsidian note for this project (ideas, feature to-dos, BRD, open questions) is `/Users/andreasthoma/Library/Mobile Documents/iCloud~md~obsidian/Documents/obsidian-main/Caddy.md`. Read it directly with Read; the Obsidian CLI's search doesn't find it.
+
 ## Setup
 
 ```bash
