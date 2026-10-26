@@ -20,7 +20,7 @@ struct CaddyApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("New Script…") { ui.chooseVideo(in: ui.targetProject(in: library)) }
                     .keyboardShortcut("n")
-                Button("New Project") { ui.newProject(in: library) }
+                Button("New Folder") { ui.newProject(in: library) }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
                 Divider()
                 Button("Import Script…") { ui.isImporting = true }

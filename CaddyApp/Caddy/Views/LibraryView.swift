@@ -133,7 +133,7 @@ private struct LibrarySidebar: View {
 
     var body: some View {
         List(selection: $ui.selection) {
-            Section("Projects") {
+            Section("Folders") {
                 ForEach(library.sortedProjects) { project in
                     DisclosureGroup(isExpanded: expansion(project.id)) {
                         ForEach(library.scripts(in: project.id)) { scriptRow($0) }
@@ -142,7 +142,7 @@ private struct LibrarySidebar: View {
                     }
                 }
                 if library.projects.isEmpty {
-                    Button("New Project", systemImage: "plus") { ui.newProject(in: library) }
+                    Button("New Folder", systemImage: "plus") { ui.newProject(in: library) }
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
                 }
@@ -150,7 +150,7 @@ private struct LibrarySidebar: View {
             Section("Scripts") {
                 ForEach(library.scripts(in: nil)) { scriptRow($0) }
                 if library.scripts(in: nil).isEmpty {
-                    Text(library.entries.isEmpty ? "Drop a finished ad here" : "No scripts outside a project")
+                    Text(library.entries.isEmpty ? "Drop a finished ad here" : "No scripts outside a folder")
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -181,8 +181,8 @@ private struct LibrarySidebar: View {
         }
         .safeAreaInset(edge: .bottom) {
             HStack {
-                Button("New Project", systemImage: "folder.badge.plus") { ui.newProject(in: library) }
-                    .help("New Project (⇧⌘N)")
+                Button("New Folder", systemImage: "folder.badge.plus") { ui.newProject(in: library) }
+                    .help("New Folder (⇧⌘N)")
                 Spacer()
                 Button("New Script", systemImage: "plus") { ui.chooseVideo(in: ui.targetProject(in: library)) }
                     .help("New Script from a video (⌘N)")
@@ -197,7 +197,7 @@ private struct LibrarySidebar: View {
             if case .success(let urls) = result { ui.add(urls, to: ui.targetProject(in: library), in: library) }
         }
         .confirmationDialog(deletionTitle, isPresented: Binding { ui.deleting != nil } set: { if !$0 { ui.deleting = nil } }, presenting: ui.deleting) { deletion in
-            Button(deletion.isProject ? "Delete Project" : "Delete Script", role: .destructive) { delete(deletion) }
+            Button(deletion.isProject ? "Delete Folder" : "Delete Script", role: .destructive) { delete(deletion) }
         } message: { deletion in
             Text(deletion.isProject ? "Its scripts move to Scripts." : "The script is removed from the library. The video isn't touched.")
         }
@@ -240,7 +240,7 @@ private struct LibrarySidebar: View {
             Button("New Script…", systemImage: "plus") { ui.chooseVideo(in: project.id) }
             Button("Rename", systemImage: "pencil") { ui.renaming = .project(project.id) }
             Divider()
-            Button("Delete Project…", systemImage: "trash", role: .destructive) { ui.deleting = .project(project) }
+            Button("Delete Folder…", systemImage: "trash", role: .destructive) { ui.deleting = .project(project) }
         }
     }
 
@@ -268,13 +268,13 @@ private struct LibrarySidebar: View {
         }
         .contextMenu {
             Button("Rename", systemImage: "pencil") { ui.renaming = .script(entry.id) }
-            Menu("Move to Project") {
+            Menu("Move to Folder") {
                 ForEach(library.sortedProjects) { project in
                     Button(project.name) { library.move(entry.id, to: project.id) }
                         .disabled(project.id == entry.projectID)
                 }
                 Divider()
-                Button("No Project") { library.move(entry.id, to: nil) }
+                Button("No Folder") { library.move(entry.id, to: nil) }
                     .disabled(entry.projectID == nil)
             }
             if let path = entry.videoPath {

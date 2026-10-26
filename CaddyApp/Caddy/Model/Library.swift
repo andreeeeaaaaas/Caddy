@@ -148,7 +148,7 @@ final class Library {
     // MARK: Projects
 
     @discardableResult
-    func addProject(named name: String = "New Project") -> Project.ID {
+    func addProject(named name: String = "New Folder") -> Project.ID {
         let project = Project(name: name)
         projects.append(project)
         saveIndex()
