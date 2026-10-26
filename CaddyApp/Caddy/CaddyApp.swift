@@ -35,7 +35,7 @@ struct CaddyApp: App {
                     .keyboardShortcut("u")
             }
             CommandGroup(after: .help) {
-                Button("Welcome to Caddy") { ui.isShowingWelcome = true }
+                Button("Show Caddy onboarding") { ui.isShowingWelcome = true }
             }
         }
     }
