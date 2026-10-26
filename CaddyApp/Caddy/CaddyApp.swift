@@ -2,19 +2,23 @@ import SwiftUI
 
 @main
 struct CaddyApp: App {
-    var body: some Scene {
-        Window("Welcome to Caddy", id: WelcomeView.windowID) {
-            WelcomeView()
-        }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
-        .defaultLaunchBehavior(.presented)
+    @State private var library = Library()
+    @State private var ui = LibraryUI()
 
-        DocumentGroup(newDocument: CaddyDocument()) { file in
-            DocumentView(document: file.$document)
+    var body: some Scene {
+        Window("Caddy", id: "library") {
+            LibraryView(library: library, ui: ui)
         }
-        .defaultSize(width: 1280, height: 800)
+        .defaultSize(width: 1440, height: 860)
         .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("New Script…") { ui.chooseVideo(in: ui.targetProject(in: library)) }
+                    .keyboardShortcut("n")
+                Button("New Project") { ui.newProject(in: library) }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
+                Divider()
+                Button("Import Script…") { ui.isImporting = true }
+            }
             // Just what the cards' text keeps.
             CommandMenu("Format") {
                 Button("Bold") { CardTextFormat.toggle(.bold) }

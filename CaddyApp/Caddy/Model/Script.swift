@@ -5,37 +5,8 @@ extension UTType {
     nonisolated static let caddyDocument = UTType(exportedAs: "andreasthoma.caddy.document")
 }
 
-/// One ad's script, saved as a `.caddy` package holding `script.json`.
-/// The video is referenced by path, not copied in (BRD section 6).
-nonisolated struct CaddyDocument: FileDocument {
-    static let readableContentTypes: [UTType] = [.caddyDocument]
-
-    var script: Script
-
-    init(script: Script = Script()) {
-        self.script = script
-    }
-
-    init(videoURL: URL) {
-        script = Script(videoPath: videoURL.path)
-    }
-
-    init(configuration: ReadConfiguration) throws {
-        guard let data = configuration.file.fileWrappers?["script.json"]?.regularFileContents else {
-            throw CocoaError(.fileReadCorruptFile)
-        }
-        script = try JSONDecoder().decode(Script.self, from: data)
-        script.addFrameNotes()
-    }
-
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let json = FileWrapper(regularFileWithContents: try encoder.encode(script))
-        return FileWrapper(directoryWithFileWrappers: ["script.json": json])
-    }
-}
-
+/// One ad's script. Saved as a `.caddy` package holding `script.json`, one per
+/// script in the library. The video is referenced by path, not copied in.
 nonisolated struct Script: Codable, Equatable {
     var videoPath: String?
     var rows: [ScriptRow] = []
@@ -57,6 +28,25 @@ nonisolated struct Script: Codable, Equatable {
     }
 
     var videoURL: URL? { videoPath.map { URL(filePath: $0) } }
+
+    static let fileName = "script.json"
+
+    /// Reads a `.caddy` package.
+    static func read(from package: URL) throws -> Script {
+        let data = try Data(contentsOf: package.appending(path: fileName))
+        var script = try JSONDecoder().decode(Script.self, from: data)
+        script.addFrameNotes()
+        return script
+    }
+
+    /// Writes a `.caddy` package, creating it if needed.
+    func write(to package: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(self)
+        try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+        try data.write(to: package.appending(path: Self.fileName), options: .atomic)
+    }
 
     /// Gives each section without a note an empty one at the top, once, for
     /// documents from before every section started with one.

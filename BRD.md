@@ -3,7 +3,7 @@
 > A native macOS app that turns a finished ad into an editable CAD script, for the brand and creative team.
 
 **Status:** Rebuilding as a native macOS app (the Python web app is the reference build)
-**Last updated:** 2026-10-21
+**Last updated:** 2026-10-26
 
 ## How to use this document
 
@@ -40,7 +40,8 @@ The user drops a finished video into Caddy. It proposes frames at scene changes,
 transcribes the audio on the device, and fills an editable script sheet while it
 works. The user accepts or removes frames, adds frames from the timeline, edits
 voiceover, supers, jingles, graphics and notes, then exports a Word or PDF
-document. Each ad is saved as a Caddy document that can be reopened later.
+document. Every script is kept in a local library, grouped into projects, so
+the team's CAD scripts live in one place.
 
 **Why not the existing option**
 The existing option is the manual process above. A local app keeps unreleased ad
@@ -56,7 +57,7 @@ process. The exact time target and export template are open (see section 6).
 
 **Scope**
 - Signed, notarized app distributed as a zip, no runtime dependencies
-- Document-based app: one `.caddy` document per ad, save and reopen
+- Local library in one window: a sidebar of projects holding scripts, plus scripts not in a project; scripts save as they're edited
 - Drop or open a video, with a metadata check
 - Auto-suggested frames at scene changes, shown as suggestions to accept or reject
 - Add a frame at the playhead, delete frames
@@ -71,12 +72,14 @@ process. The exact time target and export template are open (see section 6).
 
 ## 2. Flow
 
-One document window per ad. There are no separate upload, select and processing
-screens; work appears in the window as it completes.
+One library window: a sidebar of projects and scripts, and the selected script
+beside it. There are no separate upload, select and processing screens; work
+appears in the window as it completes.
 
-1. **Start.** A launch window offers "Open video…", a drop target and recent
-   documents. Dropping a video creates a new untitled document.
-2. **Analyse.** The document window opens straight away with the video loaded.
+1. **Start.** The sidebar lists projects (expandable, with script counts) and
+   scripts not in a project. Dropping a video on the window, or New Script (⌘N),
+   creates a script in the selected project, or outside any project.
+2. **Analyse.** The new script opens straight away with the video loaded.
    Analysis runs in the background with progress in the toolbar: scene markers
    appear on the timeline and suggested rows fill the sheet as they're found,
    then voiceover fills in as transcription finishes. The user can start editing
@@ -103,7 +106,7 @@ user edits or accepts it.
 |---|---|---|
 | Language | Swift 6 | Default actor isolation `MainActor`, as in Stems |
 | UI | SwiftUI | AppKit only where SwiftUI falls short (e.g. the timeline) |
-| App model | `DocumentGroup` with a `.caddy` package | Rows as JSON, frames as JPEG, transcript cache |
+| App model | One `Window` with a `NavigationSplitView` sidebar over a local library | Library in `~/Library/Application Support/Caddy` (not `~/Documents`, which iCloud may sync): `library.json` for projects and names, one `.caddy` package per script (`script.json`). Existing `.caddy` files are imported |
 | Media | AVFoundation | Metadata, frame grabs (`AVAssetImageGenerator`), audio, playback |
 | Scene detection | `AVAssetReader` frames scored with vImage | Block-based sudden-change score, catches supers as well as cuts. ffmpeg's scene score missed every event in the test ad at the Python app's 0.3 threshold |
 | Transcription | Speech framework `SpeechAnalyzer` / `SpeechTranscriber` | On device. Language assets come from Apple, no ad data leaves the Mac |
@@ -139,7 +142,7 @@ detection, transcription and exports.
 **Patterns**
 - Long jobs are Swift concurrency tasks that can be cancelled, owned by the document.
 - The document is the single source of truth; edits go through it so undo and autosave work.
-- Video files are referenced from the document, not copied in (see section 6).
+- Video files are referenced from the script, not copied into the library.
 
 ---
 
@@ -147,7 +150,7 @@ detection, transcription and exports.
 
 **Non-goals**: product direction this deliberately excludes
 - Not an automatic frame-describing bot. v1 is an editor with suggested frames, not a tool that writes about what changed between frames.
-- Not a hosted or multi-user product.
+- Not a hosted or multi-user product. The library is local to each Mac.
 - Not cross-platform. No Windows or web build.
 
 **Out of scope**: not in this build, may come later
@@ -155,6 +158,7 @@ detection, transcription and exports.
 - Auto-updates (Sparkle).
 - Command-line use.
 - New features in the Python web app; it is reference only.
+- A shared or synced team library (conflicts between editors).
 
 ---
 
@@ -164,7 +168,8 @@ Flag and pause on these. Do not assume an answer.
 
 - [ ] Are all office Macs Apple silicon on macOS 26? If not, the platform floor and the transcription choice (WhisperKit instead of SpeechTranscriber) change.
 - [ ] Is SpeechTranscriber accurate enough on ad voiceover compared with faster-whisper? Spike on 3 or 4 real ads before building on it.
-- [ ] Should a `.caddy` document reference the video (small, breaks if the video moves) or copy it in (portable, large)? Currently: reference.
+- [x] Should a script reference the video or copy it in? Reference (decided 2026-10-26, with the local library).
+- [ ] Should the library later be shared across the team, and how would edits from two people be reconciled?
 - [ ] AVFoundation can't read MKV or AVI, which the Python app accepted. Are those formats used, or is MP4/MOV enough?
 - [ ] What is the time target? The manual process takes about 20 minutes per 1 minute video; what counts as good enough?
 - [ ] Can a script be uploaded alongside the video and used for alignment instead of transcription? The original brief says yes; the app does not do this yet.

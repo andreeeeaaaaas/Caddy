@@ -2,14 +2,14 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// One ad in a single window: the player with the section under the playhead,
-/// or the whole script as a table.
+/// One script, beside the library sidebar: the player with the section under
+/// the playhead, or the whole script as a table.
 struct DocumentView: View {
     enum ViewMode: String {
         case playback, grid
     }
 
-    @Binding var document: CaddyDocument
+    @Binding var script: Script
 
     @AppStorage("viewMode") private var viewMode = ViewMode.playback
     @State private var playback = Playback()
@@ -21,17 +21,17 @@ struct DocumentView: View {
     /// The time under the pointer while it skims a frame in the grid.
     @State private var skimTime: Double?
     @State private var videoMissing = false
-    /// This document's window, so Space only plays the ad in front.
+    /// The library window, so Space only acts there.
     @State private var window: NSWindow?
     @State private var spaceMonitor: Any?
     @Environment(\.undoManager) private var undoManager
 
-    private var rows: [ScriptRow] { document.script.rows }
+    private var rows: [ScriptRow] { script.rows }
 
     var body: some View {
         Group {
-            if document.script.videoPath == nil && rows.isEmpty {
-                EmptyDocumentView { url in document.script.videoPath = url.path }
+            if script.videoPath == nil && rows.isEmpty {
+                EmptyDocumentView { url in script.videoPath = url.path }
             } else {
                 workspace
             }
@@ -42,13 +42,13 @@ struct DocumentView: View {
             if let spaceMonitor { NSEvent.removeMonitor(spaceMonitor) }
             spaceMonitor = nil
         }
-        .frame(minWidth: 1000, minHeight: 640)
+        .frame(minWidth: 900, minHeight: 640)
         .overlay { toolbarBackground }
         .background {
             // ⌘F has no toolbar button now; the player bar has Add Section.
             Button("Add Section", action: addSection)
                 .keyboardShortcut("f", modifiers: .command)
-                .disabled(document.script.videoPath == nil || rows.hasFrame(at: newSectionTime))
+                .disabled(script.videoPath == nil || rows.hasFrame(at: newSectionTime))
                 .opacity(0)
                 .accessibilityHidden(true)
         }
@@ -59,9 +59,9 @@ struct DocumentView: View {
         .sheet(isPresented: $showExport) {
             ExportSheet(rows: rows)
         }
-        .task(id: document.script.videoPath) { await start() }
-        .onChange(of: document.script.sensitivity) {
-            analyzer.applySensitivity(script: $document.script)
+        .task(id: script.videoPath) { await start() }
+        .onChange(of: script.sensitivity) {
+            analyzer.applySensitivity(script: $script)
         }
         .onChange(of: rows.first?.id, initial: true) {
             if selection == nil { selection = rows.first?.id }
@@ -93,10 +93,10 @@ struct DocumentView: View {
     private var workspace: some View {
         switch viewMode {
         case .playback:
-            PlaybackView(rows: $document.script.rows, selection: $selection, playback: playback)
+            PlaybackView(rows: $script.rows, selection: $selection, playback: playback)
         case .grid:
             ScriptTable(
-                rows: $document.script.rows,
+                rows: $script.rows,
                 selection: $selection,
                 playback: playback,
                 thumbnails: thumbnails,
@@ -131,12 +131,12 @@ struct DocumentView: View {
         ToolbarItemGroup(placement: .primaryAction) {
             Button("Detection Sensitivity", systemImage: "sparkles") { showSensitivity.toggle() }
                 .help("Sensitivity")
-                .disabled(document.script.videoPath == nil)
+                .disabled(script.videoPath == nil)
                 .popover(isPresented: $showSensitivity, arrowEdge: .bottom) {
                     SensitivityView(
-                        sensitivity: $document.script.sensitivity,
+                        sensitivity: $script.sensitivity,
                         sectionCount: rows.count,
-                        hasScores: document.script.sceneScores != nil,
+                        hasScores: script.sceneScores != nil,
                         isBusy: analyzer.isBusy,
                         detect: detectScenes
                     )
@@ -152,20 +152,20 @@ struct DocumentView: View {
     }
 
     private func start() async {
-        guard let url = document.script.videoURL else { return }
+        guard let url = script.videoURL else { return }
         videoMissing = !FileManager.default.fileExists(atPath: url.path)
         guard !videoMissing else { return }
         await playback.load(url)
         if let asset = playback.asset { thumbnails.load(asset) }
-        if !document.script.analysed {
-            await analyzer.run(videoURL: url, script: $document.script)
+        if !script.analysed {
+            await analyzer.run(videoURL: url, script: $script)
         }
     }
 
-    /// For documents analysed before scene scores were saved.
+    /// For scripts analysed before scene scores were saved.
     private func detectScenes() {
-        guard let url = document.script.videoURL else { return }
-        Task { await analyzer.detectScenes(videoURL: url, script: $document.script) }
+        guard let url = script.videoURL else { return }
+        Task { await analyzer.detectScenes(videoURL: url, script: $script) }
     }
 
     /// Selects the next section with suggestions, wrapping round to the first.
@@ -176,7 +176,7 @@ struct DocumentView: View {
     }
 
     private func acceptAllSuggestions() {
-        $document.script.rows.change("Confirm All Suggestions", undoManager: undoManager) { rows in
+        $script.rows.change("Confirm All Suggestions", undoManager: undoManager) { rows in
             for r in rows.indices {
                 for e in rows[r].elements.indices { rows[r].elements[e].source = nil }
             }
@@ -189,7 +189,7 @@ struct DocumentView: View {
     }
 
     private func addSection() {
-        if let id = $document.script.rows.add(at: newSectionTime, undoManager: undoManager) {
+        if let id = $script.rows.add(at: newSectionTime, undoManager: undoManager) {
             selection = id
         }
     }
@@ -208,7 +208,7 @@ struct DocumentView: View {
             let handled = MainActor.assumeIsolated {
                 guard let window, eventWindow === window, window.attachedSheet == nil,
                       !(window.firstResponder is NSText),
-                      document.script.videoPath != nil else { return false }
+                      script.videoPath != nil else { return false }
                 if !isRepeat { playback.togglePlay() }
                 return true
             }
@@ -361,7 +361,7 @@ private struct SensitivityView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Text("This document was analysed before scene scores were saved.")
+                Text("This script was analysed before scene scores were saved.")
                     .foregroundStyle(.secondary)
                 Button("Detect Scenes", action: detect)
                     .disabled(isBusy)
@@ -372,7 +372,7 @@ private struct SensitivityView: View {
     }
 }
 
-/// A document with no video yet, e.g. from File > New.
+/// A script with no video yet.
 private struct EmptyDocumentView: View {
     let onChoose: (URL) -> Void
     @State private var showImporter = false
@@ -399,6 +399,6 @@ private struct EmptyDocumentView: View {
 }
 
 #Preview {
-    DocumentView(document: .constant(CaddyDocument(script: .sample)))
+    DocumentView(script: .constant(.sample))
         .frame(width: 1280, height: 800)
 }
