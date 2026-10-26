@@ -415,11 +415,11 @@ private struct NoScriptView: View {
 
     var body: some View {
         ContentUnavailableView {
-            Label("No Script", systemImage: "doc.text.image")
+            Label("Start a new script", systemImage: "doc.text.image")
         } description: {
-            Text("Drop a finished ad here to start a script, or choose one.")
+            Text("Drop a finished ad here to start a new script or choose one")
         } actions: {
-            Button("New Script…", action: onChoose)
+            Button("Choose a video", action: onChoose)
                 .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
