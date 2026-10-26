@@ -100,9 +100,9 @@ struct ExportSheet: View {
         return name.isEmpty ? "Script" : name
     }
 
-    /// The project, the video's file name and today's date, under the title.
-    private var subtitle: String {
-        [project, script.videoURL?.lastPathComponent ?? "", Date.now.formatted(date: .abbreviated, time: .omitted)]
+    /// The video's file name and today's date, under the title.
+    private var details: String {
+        [script.videoURL?.lastPathComponent ?? "", Date.now.formatted(date: .long, time: .omitted)]
             .filter { !$0.isEmpty }
             .joined(separator: "  ·  ")
     }
@@ -128,8 +128,9 @@ struct ExportSheet: View {
     }
 
     private func write(to url: URL, options: ExportOptions) async {
-        var document = Exporter.document(title: title.isEmpty ? "Script" : title, subtitle: subtitle,
+        var document = Exporter.document(title: title.isEmpty ? "Script" : title, folder: project, details: details,
                                          rows: rows, fps: fps, options: options)
+        document.logo = Exporter.logo()
         if options.includeThumbnails, let videoURL = script.videoURL {
             let frames = await Exporter.frames(from: videoURL, at: document.sections.map(\.time))
             for index in document.sections.indices {

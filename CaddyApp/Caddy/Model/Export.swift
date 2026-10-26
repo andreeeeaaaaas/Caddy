@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -34,10 +35,19 @@ nonisolated struct ExportOptions: Sendable {
 /// Frame and Script columns and one row per section.
 nonisolated struct ExportDocument: Sendable {
     var title: String
-    /// The project, the video's file name and the date.
-    var subtitle: String
+    /// The script's folder, if it's in one.
+    var folder: String
+    /// The video's file name and the date.
+    var details: String
     var options: ExportOptions
     var sections: [ExportSection]
+    /// The frog logo, set in the bottom right of every page.
+    var logo: ExportImage?
+
+    /// The folder and details on one line.
+    var subtitle: String {
+        [folder, details].filter { !$0.isEmpty }.joined(separator: "  ·  ")
+    }
 
     var columns: [ExportColumn] {
         options.includeThumbnails ? [.frame, .script] : [.script]
@@ -66,7 +76,7 @@ nonisolated enum ExportColumn: CaseIterable, Sendable {
 nonisolated struct ExportSection: Sendable {
     var time: Double
     var timecode: String
-    var frame: ExportFrame?
+    var frame: ExportImage?
     /// Every element, scene descriptions included, in the order it happens.
     var script: [ExportLine]
 }
@@ -76,13 +86,18 @@ nonisolated struct ExportLine: Sendable {
     var text: RichText
 }
 
-/// A section's frame as JPEG data.
-nonisolated struct ExportFrame: Sendable {
-    var jpeg: Data
+/// A section's frame as a JPEG, or the logo as a PNG.
+nonisolated struct ExportImage: Sendable {
+    enum Format: String, Sendable {
+        case jpeg, png
+    }
+
+    var data: Data
+    var format = Format.jpeg
     var width: Int
     var height: Int
 
-    /// Height for a given width, keeping the frame's shape.
+    /// Height for a given width, keeping the image's shape.
     func height(forWidth width: Double) -> Double {
         self.width > 0 ? width * Double(height) / Double(self.width) : width * 9 / 16
     }
@@ -91,7 +106,7 @@ nonisolated struct ExportFrame: Sendable {
 nonisolated enum Exporter {
     /// Lays out the rows, without frames. Empty elements are left out, and
     /// scene descriptions and suggestions unless the options include them.
-    static func document(title: String, subtitle: String, rows: [ScriptRow], fps: Double, options: ExportOptions) -> ExportDocument {
+    static func document(title: String, folder: String, details: String, rows: [ScriptRow], fps: Double, options: ExportOptions) -> ExportDocument {
         let sections = rows.map { row in
             let elements = row.elements.filter { element in
                 !element.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -104,23 +119,46 @@ nonisolated enum Exporter {
                 script: elements.map { ExportLine(label: $0.kind.exportLabel, text: $0.richText) }
             )
         }
-        return ExportDocument(title: title, subtitle: subtitle, options: options, sections: sections)
+        return ExportDocument(title: title, folder: folder, details: details, options: options, sections: sections)
+    }
+
+    /// The frog logo as a PNG in Apple's secondary grey, `points` wide at 4×.
+    @MainActor
+    static func logo(_ image: NSImage? = NSImage(named: "FrogLogo"), points: Double = 30) -> ExportImage? {
+        guard let image, image.size.width > 0 else { return nil }
+        let width = Int(points * 4)
+        let height = Int((points * image.size.height / image.size.width * 4).rounded())
+        guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
+                                            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+              let context = NSGraphicsContext(bitmapImageRep: bitmap) else { return nil }
+        let previous = NSGraphicsContext.current
+        NSGraphicsContext.current = context
+        let rect = NSRect(x: 0, y: 0, width: width, height: height)
+        image.draw(in: rect)
+        // Tints the logo's shape, keeping its holes clear.
+        NSColor(srgbRed: 0x86 / 255, green: 0x86 / 255, blue: 0x8B / 255, alpha: 1).set()
+        rect.fill(using: .sourceAtop)
+        context.flushGraphics()
+        NSGraphicsContext.current = previous
+        guard let png = bitmap.representation(using: .png, properties: [:]) else { return nil }
+        return ExportImage(data: png, format: .png, width: width, height: height)
     }
 
     /// Grabs each section's frame from the video. Frames it can't grab are left out.
     @concurrent
-    static func frames(from videoURL: URL, at times: [Double]) async -> [Double: ExportFrame] {
+    static func frames(from videoURL: URL, at times: [Double]) async -> [Double: ExportImage] {
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: videoURL))
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: 1280, height: 720)
         generator.requestedTimeToleranceBefore = .zero
         generator.requestedTimeToleranceAfter = .zero
-        var frames: [Double: ExportFrame] = [:]
+        var frames: [Double: ExportImage] = [:]
         for time in times {
             guard !Task.isCancelled else { break }
             let cmTime = CMTime(seconds: time + Playback.frameNudge, preferredTimescale: 600_000)
             guard let (image, _) = try? await generator.image(at: cmTime), let jpeg = jpeg(image) else { continue }
-            frames[time] = ExportFrame(jpeg: jpeg, width: image.width, height: image.height)
+            frames[time] = ExportImage(data: jpeg, width: image.width, height: image.height)
         }
         return frames
     }

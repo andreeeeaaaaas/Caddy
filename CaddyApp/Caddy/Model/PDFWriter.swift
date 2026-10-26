@@ -89,7 +89,7 @@ enum PDFWriter {
                 let inner = rect.insetBy(dx: padding, dy: padding)
                 switch content {
                 case .frame(let frame?):
-                    let image = NSImage(data: frame.jpeg)
+                    let image = NSImage(data: frame.data)
                     let frameRect = CGRect(x: inner.minX, y: inner.minY, width: inner.width, height: frame.height(forWidth: inner.width))
                     image?.draw(in: frameRect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
                 case .frame(nil):
@@ -112,7 +112,7 @@ enum PDFWriter {
     }
 
     private enum Content {
-        case frame(ExportFrame?)
+        case frame(ExportImage?)
         case text(NSAttributedString)
     }
 
