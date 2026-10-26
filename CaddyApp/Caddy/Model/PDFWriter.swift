@@ -128,13 +128,6 @@ enum PDFWriter {
                 string.append(rich(line.text))
             }
             return .text(string)
-        case .notes:
-            let string = NSMutableAttributedString()
-            for (index, note) in section.notes.enumerated() {
-                if index > 0 { string.append(text("\n")) }
-                string.append(rich(note))
-            }
-            return .text(string)
         }
     }
 

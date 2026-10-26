@@ -74,8 +74,6 @@ nonisolated enum DocxWriter {
                         content += paragraph(runs: [run("\(line.label): ", bold: true)] + runs(line.text), after: 6)
                     }
                     xml += cell(width: width, fill: fill, content)
-                case .notes:
-                    xml += cell(width: width, fill: fill, section.notes.map { paragraph(runs: runs($0), after: 6) }.joined())
                 }
             }
             xml += "</w:tr>"

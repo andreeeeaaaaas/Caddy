@@ -722,7 +722,7 @@ private struct TableCard: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             KindMenu(kind: element.kind, onChange: onChangeKind)
-                .frame(width: 108, alignment: .leading)
+                .frame(width: 148, alignment: .leading)
             RichTextField(prompt: element.kind.prompt, value: $text, focus: focus, id: element.id)
             actions
         }
@@ -788,7 +788,7 @@ private struct TableCardFace: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Label(element.kind.title, systemImage: element.kind.symbol)
                 .foregroundStyle(.secondary)
-                .frame(width: 108, alignment: .leading)
+                .frame(width: 148, alignment: .leading)
             Text(element.text.isEmpty ? AttributedString(element.kind.prompt) : RichTextField.attributed(element.richText, base: .system(size: 13)))
                 .foregroundStyle(element.text.isEmpty ? .tertiary : .primary)
                 .lineSpacing(3)

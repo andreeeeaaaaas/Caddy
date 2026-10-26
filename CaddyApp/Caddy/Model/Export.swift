@@ -26,13 +26,12 @@ nonisolated struct ExportOptions: Sendable {
 
     var format = Format.docx
     var includeThumbnails = true
-    /// Notes in a column of their own. Without it, notes are left out.
-    var includeNotes = true
+    var includeSceneDescriptions = true
     var includeSuggestions = true
 }
 
 /// A script laid out for export: the frog CAD script template, a table with
-/// Frame, Script and Notes columns and one row per section.
+/// Frame and Script columns and one row per section.
 nonisolated struct ExportDocument: Sendable {
     var title: String
     /// The project, the video's file name and the date.
@@ -41,36 +40,25 @@ nonisolated struct ExportDocument: Sendable {
     var sections: [ExportSection]
 
     var columns: [ExportColumn] {
-        var columns: [ExportColumn] = []
-        if options.includeThumbnails { columns.append(.frame) }
-        columns.append(.script)
-        if options.includeNotes { columns.append(.notes) }
-        return columns
+        options.includeThumbnails ? [.frame, .script] : [.script]
     }
 
     /// Column widths in points, across the 7.5" between US Letter's 0.5" margins.
     func width(of column: ExportColumn) -> Double {
-        switch (column, options.includeThumbnails, options.includeNotes) {
-        case (.frame, _, true): 2.4 * 72
-        case (.frame, _, false): 2.8 * 72
-        case (.script, true, true): 3.3 * 72
-        case (.script, true, false): 4.7 * 72
-        case (.script, false, true): 5.2 * 72
-        case (.script, false, false): 7.5 * 72
-        case (.notes, true, _): 1.8 * 72
-        case (.notes, false, _): 2.3 * 72
+        switch column {
+        case .frame: 2.8 * 72
+        case .script: options.includeThumbnails ? 4.7 * 72 : 7.5 * 72
         }
     }
 }
 
 nonisolated enum ExportColumn: CaseIterable, Sendable {
-    case frame, script, notes
+    case frame, script
 
     var title: String {
         switch self {
         case .frame: "FRAME"
         case .script: "SCRIPT"
-        case .notes: "NOTES"
         }
     }
 }
@@ -79,9 +67,8 @@ nonisolated struct ExportSection: Sendable {
     var time: Double
     var timecode: String
     var frame: ExportFrame?
-    /// Everything but notes, in the order it happens.
+    /// Every element, scene descriptions included, in the order it happens.
     var script: [ExportLine]
-    var notes: [RichText]
 }
 
 nonisolated struct ExportLine: Sendable {
@@ -103,18 +90,18 @@ nonisolated struct ExportFrame: Sendable {
 
 nonisolated enum Exporter {
     /// Lays out the rows, without frames. Empty elements are left out, and
-    /// suggestions unless the options include them.
+    /// scene descriptions and suggestions unless the options include them.
     static func document(title: String, subtitle: String, rows: [ScriptRow], fps: Double, options: ExportOptions) -> ExportDocument {
         let sections = rows.map { row in
             let elements = row.elements.filter { element in
                 !element.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     && (options.includeSuggestions || !element.isSuggested)
+                    && (options.includeSceneDescriptions || element.kind != .scene)
             }
             return ExportSection(
                 time: row.time,
                 timecode: Timecode.full(row.time, fps: fps),
-                script: elements.filter { $0.kind != .note }.map { ExportLine(label: $0.kind.exportLabel, text: $0.richText) },
-                notes: options.includeNotes ? elements.filter { $0.kind == .note }.map(\.richText) : []
+                script: elements.map { ExportLine(label: $0.kind.exportLabel, text: $0.richText) }
             )
         }
         return ExportDocument(title: title, subtitle: subtitle, options: options, sections: sections)
@@ -151,7 +138,7 @@ extension ScriptElement.Kind {
     /// The label an exported line starts with.
     nonisolated var exportLabel: String {
         switch self {
-        case .note: "NOTE"
+        case .scene: "SCENE"
         case .voiceover: "VO"
         case .superText: "SUPER"
         case .sfx: "SFX"

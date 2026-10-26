@@ -18,8 +18,9 @@ nonisolated struct Script: Codable, Equatable {
     var sceneSensitivity: Double?
     var transcript: [TranscriptWord]?
     var screenText: [ScreenText]?
-    /// Set once every section has its frame note, so a note the user deletes
-    /// doesn't come back. Nil in documents from before sections had one.
+    /// Set once every section has its scene description, so one the user deletes
+    /// doesn't come back. Nil in documents from before sections had one. Keeps
+    /// its name from when scene descriptions were notes, since it's saved.
     var hasFrameNotes: Bool? = true
 
     var sensitivity: Double {
@@ -35,7 +36,7 @@ nonisolated struct Script: Codable, Equatable {
     static func read(from package: URL) throws -> Script {
         let data = try Data(contentsOf: package.appending(path: fileName))
         var script = try JSONDecoder().decode(Script.self, from: data)
-        script.addFrameNotes()
+        script.addSceneDescriptions()
         return script
     }
 
@@ -48,12 +49,12 @@ nonisolated struct Script: Codable, Equatable {
         try data.write(to: package.appending(path: Self.fileName), options: .atomic)
     }
 
-    /// Gives each section without a note an empty one at the top, once, for
-    /// documents from before every section started with one.
-    mutating func addFrameNotes() {
+    /// Gives each section without a scene description an empty one at the top,
+    /// once, for documents from before every section started with one.
+    mutating func addSceneDescriptions() {
         guard hasFrameNotes != true else { return }
-        for index in rows.indices where !rows[index].elements.contains(where: { $0.kind == .note }) {
-            rows[index].elements.insert(.frameNote(), at: 0)
+        for index in rows.indices where !rows[index].elements.contains(where: { $0.kind == .scene }) {
+            rows[index].elements.insert(.emptyScene(), at: 0)
         }
         hasFrameNotes = true
     }
@@ -78,8 +79,8 @@ nonisolated struct ScriptRow: Identifiable, Codable, Equatable {
     /// Suggestions the user dismissed, so analysis doesn't offer them again.
     var dismissed: [String] = []
 
-    /// A new section starts with an empty note, to describe the frame.
-    init(id: UUID = UUID(), time: Double, status: Status = .pending, elements: [ScriptElement] = [.frameNote()]) {
+    /// A new section starts with an empty scene description.
+    init(id: UUID = UUID(), time: Double, status: Status = .pending, elements: [ScriptElement] = [.emptyScene()]) {
         self.id = id
         self.time = time
         self.status = status
@@ -91,9 +92,9 @@ nonisolated struct ScriptRow: Identifiable, Codable, Equatable {
     }
 
     /// Whether the user has accepted or written anything: more than suggestions
-    /// and the empty frame note every section starts with.
+    /// and the empty scene description every section starts with.
     var hasUserContent: Bool {
-        elements.contains { !$0.isSuggested && !$0.isEmptyNote }
+        elements.contains { !$0.isSuggested && !$0.isEmptyScene }
     }
 
     /// Confirms a suggestion.
@@ -185,8 +186,8 @@ nonisolated struct ScriptRow: Identifiable, Codable, Equatable {
         }
         let fromAnalysis = status == .detected
         var elements: [ScriptElement] = []
-        if case let notes = try field(.notes), !notes.isEmpty { elements.append(ScriptElement(kind: .note, text: notes)) }
-        if case let graphics = try field(.graphics), !graphics.isEmpty { elements.append(ScriptElement(kind: .note, text: "Graphics: \(graphics)")) }
+        if case let notes = try field(.notes), !notes.isEmpty { elements.append(ScriptElement(kind: .scene, text: notes)) }
+        if case let graphics = try field(.graphics), !graphics.isEmpty { elements.append(ScriptElement(kind: .scene, text: "Graphics: \(graphics)")) }
         if case let vo = try field(.vo), !vo.isEmpty {
             elements.append(ScriptElement(kind: .voiceover, text: vo, source: fromAnalysis ? .audio : nil))
         }
@@ -207,10 +208,11 @@ nonisolated struct ScriptRow: Identifiable, Codable, Equatable {
     }
 }
 
-/// One line of the script for a section: a note, a voiceover, a super and so on.
+/// One line of the script for a section: a scene description, a voiceover, a super and so on.
 nonisolated struct ScriptElement: Identifiable, Codable, Equatable {
     enum Kind: String, Codable, CaseIterable {
-        case note
+        /// Describes what's on screen. Saved as "note", its name before.
+        case scene = "note"
         case voiceover
         case superText = "super"
         case sfx
@@ -219,7 +221,7 @@ nonisolated struct ScriptElement: Identifiable, Codable, Equatable {
 
         var title: String {
             switch self {
-            case .note: "Note"
+            case .scene: "Scene Description"
             case .voiceover: "Voiceover"
             case .superText: "Super"
             case .sfx: "SFX"
@@ -230,7 +232,7 @@ nonisolated struct ScriptElement: Identifiable, Codable, Equatable {
 
         var symbol: String {
             switch self {
-            case .note: "square.and.pencil"
+            case .scene: "square.and.pencil"
             case .voiceover: "waveform"
             case .superText: "character.textbox"
             case .sfx: "party.popper"
@@ -241,7 +243,7 @@ nonisolated struct ScriptElement: Identifiable, Codable, Equatable {
 
         var prompt: String {
             switch self {
-            case .note: "Describe the shot, e.g. Open on a medium shot of…"
+            case .scene: "Describe the scene, e.g. Open on a medium shot of…"
             case .voiceover: "Write the voiceover…"
             case .superText: "Type the super as it appears…"
             case .sfx: "Describe the sound effect…"
@@ -282,11 +284,11 @@ nonisolated struct ScriptElement: Identifiable, Codable, Equatable {
         }
     }
 
-    var isEmptyNote: Bool { kind == .note && text.isEmpty }
+    var isEmptyScene: Bool { kind == .scene && text.isEmpty }
 
-    /// The empty note a section starts with.
-    static func frameNote() -> ScriptElement {
-        ScriptElement(kind: .note, text: "")
+    /// The empty scene description a section starts with.
+    static func emptyScene() -> ScriptElement {
+        ScriptElement(kind: .scene, text: "")
     }
 }
 
@@ -381,8 +383,8 @@ extension [ScriptRow] {
         guard let index = firstIndex(where: { $0.id == id }), index > 0 else { return nil }
         let row = remove(at: index)
         var target = self[index - 1]
-        // Its empty frame note would leave the kept section with two.
-        target.elements += row.elements.filter { !$0.isEmptyNote }
+        // Its empty scene description would leave the kept section with two.
+        target.elements += row.elements.filter { !$0.isEmptyScene }
         target.dismissed += row.dismissed
         // Analysis replaces detected sections, which would drop a kept one's elements.
         if target.status == .detected && row.status != .detected {
@@ -467,30 +469,30 @@ extension Script {
     /// Rows from the Figma wireframes, for previews.
     static let sample = Script(rows: [
         ScriptRow(time: 0, elements: [
-            ScriptElement(kind: .note, text: "Open on beach, WS"),
+            ScriptElement(kind: .scene, text: "Open on beach, WS"),
             ScriptElement(kind: .voiceover, text: "Summer's here, and so are the savings."),
             ScriptElement(kind: .superText, text: "SUMMER SALE"),
         ]),
         ScriptRow(time: 3, elements: [
-            .frameNote(),
+            .emptyScene(),
             ScriptElement(kind: .voiceover, text: "Up to 40% off everything in store."),
             ScriptElement(kind: .superText, text: "UP TO 40% OFF*", source: .screen),
         ]),
         ScriptRow(time: 7, status: .detected, elements: [
-            .frameNote(),
+            .emptyScene(),
             ScriptElement(kind: .voiceover, text: "Including the brands you love.", source: .audio),
         ]),
         ScriptRow(time: 11, elements: [
-            ScriptElement(kind: .note, text: "Product hero. Pack shot, logo lock-up"),
+            ScriptElement(kind: .scene, text: "Product hero. Pack shot, logo lock-up"),
             ScriptElement(kind: .voiceover, text: "But be quick."),
             ScriptElement(kind: .superText, text: "ENDS SUNDAY"),
         ]),
         ScriptRow(time: 15, elements: [
-            ScriptElement(kind: .note, text: "Hold disclaimer 3s"),
+            ScriptElement(kind: .scene, text: "Hold disclaimer 3s"),
             ScriptElement(kind: .disclaimer, text: "*Conditions apply. See website for details."),
         ]),
         ScriptRow(time: 24, elements: [
-            ScriptElement(kind: .note, text: "End frame"),
+            ScriptElement(kind: .scene, text: "End frame"),
             ScriptElement(kind: .voiceover, text: "Shop now, online and in store."),
             ScriptElement(kind: .superText, text: "LOGO + URL"),
         ]),

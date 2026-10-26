@@ -25,7 +25,7 @@ struct ExportSheet: View {
                 .font(.headline)
 
             HStack(alignment: .top, spacing: 22) {
-                PagePreview(showThumbnails: options.includeThumbnails, showNotes: options.includeNotes)
+                PagePreview(showThumbnails: options.includeThumbnails)
                     .frame(width: 150, height: 212)
                 VStack(alignment: .leading, spacing: 14) {
                     group("Format") {
@@ -43,7 +43,7 @@ struct ExportSheet: View {
                     }
                     group("Include") {
                         Toggle("Frame thumbnails", isOn: $options.includeThumbnails)
-                        Toggle("Notes column", isOn: $options.includeNotes)
+                        Toggle("Scene descriptions", isOn: $options.includeSceneDescriptions)
                         Toggle("Suggestions not yet confirmed", isOn: $options.includeSuggestions)
                     }
                 }
@@ -163,7 +163,6 @@ struct ExportSheet: View {
 /// A sketch of the exported page.
 private struct PagePreview: View {
     let showThumbnails: Bool
-    let showNotes: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -175,15 +174,9 @@ private struct PagePreview: View {
                         Rectangle().fill(CaddyStyle.placeholder).frame(width: 40, height: 24)
                     }
                     VStack(alignment: .leading, spacing: 4) {
-                        bar(showNotes ? 46 : 76, 4, CaddyStyle.placeholder)
-                        bar(showNotes ? 36 : 60, 4, CaddyStyle.placeholder)
-                        bar(showNotes ? 26 : 44, 4, CaddyStyle.placeholder.opacity(0.6))
-                    }
-                    if showNotes {
-                        VStack(alignment: .leading, spacing: 4) {
-                            bar(24, 4, CaddyStyle.placeholder.opacity(0.6))
-                            bar(18, 4, CaddyStyle.placeholder.opacity(0.6))
-                        }
+                        bar(76, 4, CaddyStyle.placeholder)
+                        bar(60, 4, CaddyStyle.placeholder)
+                        bar(44, 4, CaddyStyle.placeholder.opacity(0.6))
                     }
                 }
             }
