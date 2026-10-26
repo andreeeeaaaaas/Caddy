@@ -21,6 +21,9 @@ struct DocumentView: View {
     /// The time under the pointer while it skims a frame in the grid.
     @State private var skimTime: Double?
     @State private var videoMissing = false
+    /// This document's window, so Space only plays the ad in front.
+    @State private var window: NSWindow?
+    @State private var spaceMonitor: Any?
     @Environment(\.undoManager) private var undoManager
 
     private var rows: [ScriptRow] { document.script.rows }
@@ -31,13 +34,13 @@ struct DocumentView: View {
                 EmptyDocumentView { url in document.script.videoPath = url.path }
             } else {
                 workspace
-                    .onKeyPress(.space) {
-                        // Typing in a field gets the space.
-                        guard !(NSApp.keyWindow?.firstResponder is NSText) else { return .ignored }
-                        playback.togglePlay()
-                        return .handled
-                    }
             }
+        }
+        .background(WindowReader { window = $0 })
+        .onAppear(perform: watchSpace)
+        .onDisappear {
+            if let spaceMonitor { NSEvent.removeMonitor(spaceMonitor) }
+            spaceMonitor = nil
         }
         .frame(minWidth: 1000, minHeight: 640)
         .overlay { toolbarBackground }
@@ -138,6 +141,10 @@ struct DocumentView: View {
                         detect: detectScenes
                     )
                 }
+        }
+        // Splits Sensitivity and Export into their own glass groups.
+        ToolbarSpacer(.fixed, placement: .primaryAction)
+        ToolbarItem(placement: .primaryAction) {
             Button("Export…", systemImage: "square.and.arrow.up") { showExport = true }
                 .help("Export")
                 .disabled(rows.isEmpty)
@@ -187,6 +194,28 @@ struct DocumentView: View {
         }
     }
 
+    /// Space plays or pauses from anywhere in the window, whatever was clicked
+    /// last, unless a text field is being typed in. Watched at the window rather
+    /// than with `onKeyPress`, which needs a focused view, and clicking a button
+    /// such as Loop leaves none.
+    private func watchSpace() {
+        guard spaceMonitor == nil else { return }
+        spaceMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.charactersIgnoringModifiers == " ",
+                  event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock).isEmpty else { return event }
+            let eventWindow = event.window
+            let isRepeat = event.isARepeat
+            let handled = MainActor.assumeIsolated {
+                guard let window, eventWindow === window, window.attachedSheet == nil,
+                      !(window.firstResponder is NSText),
+                      document.script.videoPath != nil else { return false }
+                if !isRepeat { playback.togglePlay() }
+                return true
+            }
+            return handled ? nil : event
+        }
+    }
+
     /// Shows a section from the grid in the playback view.
     private func open(_ id: ScriptRow.ID) {
         guard let row = rows.first(where: { $0.id == id }) else { return }
@@ -195,6 +224,31 @@ struct DocumentView: View {
         viewMode = .playback
     }
 
+}
+
+/// Reports the window a view is in.
+private struct WindowReader: NSViewRepresentable {
+    let onWindow: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView { WindowView(onWindow: onWindow) }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class WindowView: NSView {
+        let onWindow: (NSWindow?) -> Void
+
+        init(onWindow: @escaping (NSWindow?) -> Void) {
+            self.onWindow = onWindow
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            // Not during SwiftUI's own update.
+            DispatchQueue.main.async { [weak self] in self?.onWindow(self?.window) }
+        }
+    }
 }
 
 /// Toolbar status: analysis progress, then a summary of the rows.

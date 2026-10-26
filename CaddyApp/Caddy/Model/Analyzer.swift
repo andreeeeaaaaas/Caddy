@@ -121,7 +121,7 @@ final class Analyzer {
         let threshold = SceneDetector.threshold(forSensitivity: script.wrappedValue.sensitivity)
         let times = SceneDetector.suggestions(from: scores, threshold: threshold)
         let current = script.wrappedValue.rows
-        let kept = current.filter { $0.status != .detected || $0.elements.contains { !$0.isSuggested } }
+        let kept = current.filter { $0.status != .detected || $0.hasUserContent }
         let detected = current.filter { $0.status == .detected }
 
         var rows = kept

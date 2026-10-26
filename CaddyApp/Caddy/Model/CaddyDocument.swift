@@ -25,6 +25,7 @@ nonisolated struct CaddyDocument: FileDocument {
             throw CocoaError(.fileReadCorruptFile)
         }
         script = try JSONDecoder().decode(Script.self, from: data)
+        script.addFrameNotes()
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
@@ -46,6 +47,9 @@ nonisolated struct Script: Codable, Equatable {
     var sceneSensitivity: Double?
     var transcript: [TranscriptWord]?
     var screenText: [ScreenText]?
+    /// Set once every section has its frame note, so a note the user deletes
+    /// doesn't come back. Nil in documents from before sections had one.
+    var hasFrameNotes: Bool? = true
 
     var sensitivity: Double {
         get { sceneSensitivity ?? SceneDetector.defaultSensitivity }
@@ -53,6 +57,16 @@ nonisolated struct Script: Codable, Equatable {
     }
 
     var videoURL: URL? { videoPath.map { URL(filePath: $0) } }
+
+    /// Gives each section without a note an empty one at the top, once, for
+    /// documents from before every section started with one.
+    mutating func addFrameNotes() {
+        guard hasFrameNotes != true else { return }
+        for index in rows.indices where !rows[index].elements.contains(where: { $0.kind == .note }) {
+            rows[index].elements.insert(.frameNote(), at: 0)
+        }
+        hasFrameNotes = true
+    }
 }
 
 /// One section of the ad: from its time to the next section's. Holds the
@@ -74,7 +88,8 @@ nonisolated struct ScriptRow: Identifiable, Codable, Equatable {
     /// Suggestions the user dismissed, so analysis doesn't offer them again.
     var dismissed: [String] = []
 
-    init(id: UUID = UUID(), time: Double, status: Status = .pending, elements: [ScriptElement] = []) {
+    /// A new section starts with an empty note, to describe the frame.
+    init(id: UUID = UUID(), time: Double, status: Status = .pending, elements: [ScriptElement] = [.frameNote()]) {
         self.id = id
         self.time = time
         self.status = status
@@ -83,6 +98,12 @@ nonisolated struct ScriptRow: Identifiable, Codable, Equatable {
 
     var suggestionCount: Int {
         elements.filter(\.isSuggested).count
+    }
+
+    /// Whether the user has accepted or written anything: more than suggestions
+    /// and the empty frame note every section starts with.
+    var hasUserContent: Bool {
+        elements.contains { !$0.isSuggested && !$0.isEmptyNote }
     }
 
     /// Confirms a suggestion.
@@ -258,6 +279,13 @@ nonisolated struct ScriptElement: Identifiable, Codable, Equatable {
     var source: Source?
 
     var isSuggested: Bool { source != nil }
+
+    var isEmptyNote: Bool { kind == .note && text.isEmpty }
+
+    /// The empty note a section starts with.
+    static func frameNote() -> ScriptElement {
+        ScriptElement(kind: .note, text: "")
+    }
 }
 
 extension [ScriptRow] {
@@ -305,7 +333,8 @@ extension [ScriptRow] {
         guard let index = firstIndex(where: { $0.id == id }), index > 0 else { return nil }
         let row = remove(at: index)
         var target = self[index - 1]
-        target.elements += row.elements
+        // Its empty frame note would leave the kept section with two.
+        target.elements += row.elements.filter { !$0.isEmptyNote }
         target.dismissed += row.dismissed
         // Analysis replaces detected sections, which would drop a kept one's elements.
         if target.status == .detected && row.status != .detected {
@@ -395,10 +424,12 @@ extension Script {
             ScriptElement(kind: .superText, text: "SUMMER SALE"),
         ]),
         ScriptRow(time: 3, elements: [
+            .frameNote(),
             ScriptElement(kind: .voiceover, text: "Up to 40% off everything in store."),
             ScriptElement(kind: .superText, text: "UP TO 40% OFF*", source: .screen),
         ]),
         ScriptRow(time: 7, status: .detected, elements: [
+            .frameNote(),
             ScriptElement(kind: .voiceover, text: "Including the brands you love.", source: .audio),
         ]),
         ScriptRow(time: 11, elements: [

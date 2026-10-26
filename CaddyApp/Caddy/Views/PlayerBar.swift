@@ -90,27 +90,32 @@ private struct ScrubBar: View {
         } action: { onTrackFrame($0) }
         .onHover { isHovering = $0 }
         .animation(.snappy(duration: 0.2), value: isExpanded)
+        .animation(.snappy(duration: 0.2), value: isLooping)
     }
 
     private func segment(_ index: Int, row: ScriptRow, width: CGFloat, current: Int?) -> some View {
         let range = rows.segment(index, duration: playback.duration)
         let start = x(range.lowerBound, width)
         let blockWidth = max(1, x(range.upperBound, width) - start - (index + 1 < rows.count ? Self.gap : 0))
-        // Played blocks fill; while looping only the looped one does.
+        let isCurrent = index == current
+        // Played blocks fill. While looping the others' fill fades out rather
+        // than shrinking, and the looped block turns mint like the Loop button.
         let fill: CGFloat = switch current {
         case index?:
             range.isEmpty ? 1 : CGFloat((playback.currentTime - range.lowerBound) / (range.upperBound - range.lowerBound))
-        case let current? where index < current && !isLooping: 1
+        case let current? where index < current: 1
         default: 0
         }
+        let isLooped = isLooping && isCurrent
 
         return ZStack(alignment: .topLeading) {
             Capsule()
-                .fill(Color(white: 0.965).opacity(0.6))
+                .fill(isLooped ? Color.mint.opacity(0.35) : Color(white: 0.965).opacity(0.6))
                 .overlay(alignment: .leading) {
                     Rectangle()
-                        .fill(.white)
+                        .fill(isLooped ? .mint : .white)
                         .frame(width: blockWidth * min(max(fill, 0), 1))
+                        .opacity(isLooping && !isCurrent ? 0 : 1)
                 }
                 .clipShape(.capsule)
                 .overlay {
@@ -125,8 +130,8 @@ private struct ScrubBar: View {
             if isExpanded && blockWidth >= 12 {
                 Text("\(index + 1)")
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(.white)
-                    .opacity(index == current ? 1 : 0.4)
+                    .foregroundStyle(isLooped ? .mint : .white)
+                    .opacity(isCurrent ? 1 : 0.4)
                     .offset(y: 40)
                     .transition(.opacity)
             }
