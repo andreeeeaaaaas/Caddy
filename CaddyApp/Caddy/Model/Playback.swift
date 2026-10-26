@@ -18,7 +18,7 @@ final class Playback {
 
     /// Added to frame times before converting to CMTime, which otherwise can
     /// round down to the previous frame (13.12 s showed the 13.08 s frame).
-    static let frameNudge = 0.001
+    nonisolated static let frameNudge = 0.001
 
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var segmentEndObserver: Any?

@@ -61,7 +61,7 @@ struct DocumentView: View {
         // band over just the panel, so draw one across the window instead.
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .sheet(isPresented: $showExport) {
-            ExportSheet(rows: rows)
+            ExportSheet(script: script, title: title, project: subtitle, fps: playback.frameRate)
         }
         .task(id: script.videoPath) { await start() }
         .onChange(of: script.sensitivity) {

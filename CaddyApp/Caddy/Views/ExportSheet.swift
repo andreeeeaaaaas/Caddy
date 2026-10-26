@@ -1,22 +1,22 @@
+import AppKit
 import SwiftUI
 
-/// Export options. The DOCX and PDF writers aren't built yet; Export only closes the sheet.
+/// Export options, then a save panel. Frames are grabbed from the video, then
+/// the DOCX or PDF is written.
 struct ExportSheet: View {
-    enum Format: String, CaseIterable, Identifiable {
-        case docx = "Word (.docx)"
-        case pdf = "PDF"
-        var id: Self { self }
-    }
-
-    let rows: [ScriptRow]
+    let script: Script
+    var title = ""
+    /// The script's project.
+    var project = ""
+    var fps: Double = 25
 
     @Environment(\.dismiss) private var dismiss
-    @State private var format = Format.docx
+    @State private var options = ExportOptions()
     @State private var template = "frog CAD script"
-    @State private var includeThumbnails = true
-    @State private var includeNotes = true
-    @State private var includeSuggestions = true
+    @State private var export: Task<Void, Never>?
+    @State private var failure: String?
 
+    private var rows: [ScriptRow] { script.rows }
     private var suggestionCount: Int { rows.map(\.suggestionCount).reduce(0, +) }
 
     var body: some View {
@@ -25,12 +25,12 @@ struct ExportSheet: View {
                 .font(.headline)
 
             HStack(alignment: .top, spacing: 22) {
-                PagePreview(showThumbnails: includeThumbnails)
+                PagePreview(showThumbnails: options.includeThumbnails, showNotes: options.includeNotes)
                     .frame(width: 150, height: 212)
                 VStack(alignment: .leading, spacing: 14) {
                     group("Format") {
-                        Picker("Format", selection: $format) {
-                            ForEach(Format.allCases) { Text($0.rawValue).tag($0) }
+                        Picker("Format", selection: $options.format) {
+                            ForEach(ExportOptions.Format.allCases) { Text($0.rawValue).tag($0) }
                         }
                         .pickerStyle(.segmented)
                         .labelsHidden()
@@ -42,9 +42,9 @@ struct ExportSheet: View {
                         .labelsHidden()
                     }
                     group("Include") {
-                        Toggle("Frame thumbnails", isOn: $includeThumbnails)
-                        Toggle("Notes column", isOn: $includeNotes)
-                        Toggle("Suggestions not yet confirmed", isOn: $includeSuggestions)
+                        Toggle("Frame thumbnails", isOn: $options.includeThumbnails)
+                        Toggle("Notes column", isOn: $options.includeNotes)
+                        Toggle("Suggestions not yet confirmed", isOn: $options.includeSuggestions)
                     }
                 }
             }
@@ -60,22 +60,93 @@ struct ExportSheet: View {
                     .background(.yellow.opacity(0.12), in: .rect(cornerRadius: 6))
             }
 
+            if let failure {
+                Label(failure, systemImage: "xmark.octagon.fill")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .symbolRenderingMode(.multicolor)
+            }
+
             HStack {
+                if export != nil {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Exporting…")
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("Export…") { dismiss() }
+                Button("Export…", action: chooseFile)
                     .keyboardShortcut(.defaultAction)
+                    .disabled(export != nil)
             }
         }
         .padding(22)
         .frame(width: 580)
+        .onDisappear { export?.cancel() }
     }
 
     private var warning: String? {
         guard suggestionCount > 0 else { return nil }
         let count = suggestionCount == 1 ? "1 suggestion isn't" : "\(suggestionCount) suggestions aren't"
-        return "\(count) confirmed yet. " + (includeSuggestions ? "They'll be exported as they are." : "They'll be left out.")
+        return "\(count) confirmed yet. " + (options.includeSuggestions ? "They'll be exported as they are." : "They'll be left out.")
+    }
+
+    /// The script's name, without characters a file name can't hold.
+    private var fileName: String {
+        let name = title.components(separatedBy: CharacterSet(charactersIn: "/:")).joined(separator: "-")
+            .trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? "Script" : name
+    }
+
+    /// The project, the video's file name and today's date, under the title.
+    private var subtitle: String {
+        [project, script.videoURL?.lastPathComponent ?? "", Date.now.formatted(date: .abbreviated, time: .omitted)]
+            .filter { !$0.isEmpty }
+            .joined(separator: "  ·  ")
+    }
+
+    private func chooseFile() {
+        failure = nil
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [options.format.contentType]
+        panel.nameFieldStringValue = "\(fileName).\(options.format.fileExtension)"
+        panel.canCreateDirectories = true
+        let options = options
+        export = Task {
+            let response = if let window = NSApp.keyWindow {
+                await panel.beginSheetModal(for: window)
+            } else {
+                await panel.begin()
+            }
+            if response == .OK, let url = panel.url {
+                await write(to: url, options: options)
+            }
+            export = nil
+        }
+    }
+
+    private func write(to url: URL, options: ExportOptions) async {
+        var document = Exporter.document(title: title.isEmpty ? "Script" : title, subtitle: subtitle,
+                                         rows: rows, fps: fps, options: options)
+        if options.includeThumbnails, let videoURL = script.videoURL {
+            let frames = await Exporter.frames(from: videoURL, at: document.sections.map(\.time))
+            for index in document.sections.indices {
+                document.sections[index].frame = frames[document.sections[index].time]
+            }
+        }
+        guard !Task.isCancelled else { return }
+        let data = switch options.format {
+        case .docx: DocxWriter.data(for: document)
+        case .pdf: PDFWriter.data(for: document)
+        }
+        do {
+            try data.write(to: url, options: .atomic)
+            dismiss()
+        } catch {
+            failure = "Couldn't save the file. \(error.localizedDescription)"
+        }
     }
 
     private func group<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -92,6 +163,7 @@ struct ExportSheet: View {
 /// A sketch of the exported page.
 private struct PagePreview: View {
     let showThumbnails: Bool
+    let showNotes: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -103,9 +175,15 @@ private struct PagePreview: View {
                         Rectangle().fill(CaddyStyle.placeholder).frame(width: 40, height: 24)
                     }
                     VStack(alignment: .leading, spacing: 4) {
-                        bar(76, 4, CaddyStyle.placeholder)
-                        bar(60, 4, CaddyStyle.placeholder)
-                        bar(44, 4, CaddyStyle.placeholder.opacity(0.6))
+                        bar(showNotes ? 46 : 76, 4, CaddyStyle.placeholder)
+                        bar(showNotes ? 36 : 60, 4, CaddyStyle.placeholder)
+                        bar(showNotes ? 26 : 44, 4, CaddyStyle.placeholder.opacity(0.6))
+                    }
+                    if showNotes {
+                        VStack(alignment: .leading, spacing: 4) {
+                            bar(24, 4, CaddyStyle.placeholder.opacity(0.6))
+                            bar(18, 4, CaddyStyle.placeholder.opacity(0.6))
+                        }
                     }
                 }
             }
@@ -123,5 +201,5 @@ private struct PagePreview: View {
 }
 
 #Preview {
-    ExportSheet(rows: Script.sample.rows)
+    ExportSheet(script: .sample, title: "Summer Sale", project: "Retail")
 }
