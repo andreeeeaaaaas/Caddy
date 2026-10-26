@@ -116,6 +116,11 @@ struct LibraryView: View {
             // Open on the projects, with the selected script's project showing.
             if ui.expanded.isEmpty { ui.expanded = Set(library.projects.map(\.id)) }
             if let selection = ui.selection, library.entry(selection) == nil, library.project(selection) == nil { ui.selection = nil }
+            // The tour opens once, on the first launch on this Mac.
+            if !UserDefaults.standard.bool(forKey: "hasSeenWelcome") {
+                UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+                ui.isShowingWelcome = true
+            }
         }
     }
 
