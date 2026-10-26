@@ -112,7 +112,7 @@ struct DocumentView: View {
         ToolbarItem(placement: .navigation) {
             Picker("View", selection: $viewMode) {
                 Label("Playback", systemImage: "play.rectangle").tag(ViewMode.playback)
-                Label("Grid", systemImage: "rectangle.grid.1x3").tag(ViewMode.grid)
+                Label("Grid", systemImage: "tablecells").tag(ViewMode.grid)
             }
             .pickerStyle(.segmented)
             .labelStyle(.iconOnly)

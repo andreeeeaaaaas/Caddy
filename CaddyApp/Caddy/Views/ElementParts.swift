@@ -11,28 +11,41 @@ struct KindMenu: View {
     @State private var isHovering = false
 
     var body: some View {
-        Menu {
-            KindPicker(kind: kind, onChange: onChange)
-        } label: {
-            HStack(spacing: 5) {
-                Label(kind.title, systemImage: kind.symbol)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .opacity(isHovering ? 1 : 0)
+        // A menu reports no text baseline, so a hidden copy of its label sets
+        // one, lining the type up with the card's text beside it.
+        label
+            .hidden()
+            .overlay {
+                Menu {
+                    KindPicker(kind: kind, onChange: onChange)
+                } label: {
+                    label
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.primary.opacity(isHovering ? 0.06 : 0), in: .rect(cornerRadius: 6))
+                        // The tint reaches past the label without moving it.
+                        .padding(.horizontal, -6)
+                        .padding(.vertical, -2)
+                        .contentShape(.rect)
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
             }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Color.primary.opacity(isHovering ? 0.06 : 0), in: .rect(cornerRadius: 6))
-            .padding(.horizontal, -6)
-            .contentShape(.rect)
+            .fixedSize()
+            .onHover { isHovering = $0 }
+            .help("Change the type")
+    }
+
+    private var label: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Label(kind.title, systemImage: kind.symbol)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .opacity(isHovering ? 1 : 0)
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .onHover { isHovering = $0 }
-        .help("Change the type")
     }
 }
 
@@ -208,7 +221,7 @@ private struct FlowLayout: Layout {
 /// Used by the playback panel and the grid.
 struct ElementView: View {
     let element: ScriptElement
-    @Binding var text: String
+    @Binding var text: RichText
     var focus: FocusState<PlaybackView.Focus?>.Binding
     let onAccept: () -> Void
     let onChangeKind: (ScriptElement.Kind) -> Void
@@ -239,12 +252,7 @@ struct ElementView: View {
             }
             .frame(height: 16)
 
-            TextField(element.kind.title, text: $text, prompt: Text(element.kind.prompt), axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineSpacing(3)
-                .focused(focus, equals: .element(element.id))
-                .onExitCommand { focus.wrappedValue = .player }
-                .labelsHidden()
+            RichTextField(prompt: element.kind.prompt, value: $text, focus: focus, id: element.id)
         }
         .padding(.horizontal, 10)
         .padding(.top, 14)
@@ -302,7 +310,7 @@ struct CardFace: View {
                 Spacer()
             }
             .frame(height: 16)
-            Text(element.text.isEmpty ? element.kind.prompt : element.text)
+            Text(element.text.isEmpty ? AttributedString(element.kind.prompt) : RichTextField.attributed(element.richText, base: .system(size: 13)))
                 .foregroundStyle(element.text.isEmpty ? .tertiary : .primary)
                 .lineSpacing(3)
                 .frame(maxWidth: .infinity, alignment: .leading)

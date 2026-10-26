@@ -565,14 +565,14 @@ private struct SectionPanel: View {
 
     // MARK: Elements
 
-    /// Typing in a suggestion accepts it.
-    private func text(for id: ScriptElement.ID) -> Binding<String> {
+    /// Typing in a suggestion, or styling it, accepts it.
+    private func text(for id: ScriptElement.ID) -> Binding<RichText> {
         Binding {
-            row.elements.first { $0.id == id }?.text ?? ""
+            row.elements.first { $0.id == id }?.richText ?? RichText(text: "", styles: [])
         } set: { newValue in
             // Focusing a field can write its text back unchanged, which mustn't accept it.
-            guard let index = row.elements.firstIndex(where: { $0.id == id }), row.elements[index].text != newValue else { return }
-            row.elements[index].text = newValue
+            guard let index = row.elements.firstIndex(where: { $0.id == id }), row.elements[index].richText != newValue else { return }
+            row.elements[index].richText = newValue
             row.elements[index].source = nil
         }
     }

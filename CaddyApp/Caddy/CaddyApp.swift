@@ -14,6 +14,17 @@ struct CaddyApp: App {
             DocumentView(document: file.$document)
         }
         .defaultSize(width: 1280, height: 800)
+        .commands {
+            // Just what the cards' text keeps.
+            CommandMenu("Format") {
+                Button("Bold") { CardTextFormat.toggle(.bold) }
+                    .keyboardShortcut("b")
+                Button("Italic") { CardTextFormat.toggle(.italic) }
+                    .keyboardShortcut("i")
+                Button("Underline") { CardTextFormat.toggle(.underline) }
+                    .keyboardShortcut("u")
+            }
+        }
     }
 }
 

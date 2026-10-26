@@ -127,7 +127,9 @@ nonisolated struct ScriptRow: Identifiable, Codable, Equatable {
     mutating func duplicate(_ id: ScriptElement.ID) {
         guard let index = elements.firstIndex(where: { $0.id == id }) else { return }
         elements[index].source = nil
-        elements.insert(ScriptElement(kind: elements[index].kind, text: elements[index].text), at: index + 1)
+        var copy = ScriptElement(kind: elements[index].kind, text: elements[index].text)
+        copy.styles = elements[index].styles
+        elements.insert(copy, at: index + 1)
     }
 
     /// Deletes an element. A dismissed suggestion isn't offered again.
@@ -277,8 +279,18 @@ nonisolated struct ScriptElement: Identifiable, Codable, Equatable {
     var text: String
     /// Set while the element is a suggestion from analysis; cleared once accepted or edited.
     var source: Source?
+    /// Bold, italic and underlined runs in `text`, which stays plain for matching suggestions.
+    var styles: [TextStyle]?
 
     var isSuggested: Bool { source != nil }
+
+    var richText: RichText {
+        get { RichText(text: text, styles: styles ?? []) }
+        set {
+            text = newValue.text
+            styles = newValue.styles.isEmpty ? nil : newValue.styles
+        }
+    }
 
     var isEmptyNote: Bool { kind == .note && text.isEmpty }
 
@@ -286,6 +298,52 @@ nonisolated struct ScriptElement: Identifiable, Codable, Equatable {
     static func frameNote() -> ScriptElement {
         ScriptElement(kind: .note, text: "")
     }
+}
+
+/// A run of bold, italic or underlined text, in characters from the start.
+nonisolated struct TextStyle: Codable, Equatable, Sendable {
+    var start: Int
+    var length: Int
+    var bold = false
+    var italic = false
+    var underline = false
+
+    init(start: Int, length: Int, bold: Bool = false, italic: Bool = false, underline: Bool = false) {
+        self.start = start
+        self.length = length
+        self.bold = bold
+        self.italic = italic
+        self.underline = underline
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case start, length, bold, italic, underline
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        start = try c.decode(Int.self, forKey: .start)
+        length = try c.decode(Int.self, forKey: .length)
+        bold = try c.decodeIfPresent(Bool.self, forKey: .bold) ?? false
+        italic = try c.decodeIfPresent(Bool.self, forKey: .italic) ?? false
+        underline = try c.decodeIfPresent(Bool.self, forKey: .underline) ?? false
+    }
+
+    /// Writes only the styles a run has.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(start, forKey: .start)
+        try c.encode(length, forKey: .length)
+        if bold { try c.encode(true, forKey: .bold) }
+        if italic { try c.encode(true, forKey: .italic) }
+        if underline { try c.encode(true, forKey: .underline) }
+    }
+}
+
+/// An element's text with its styled runs, as a card edits it.
+nonisolated struct RichText: Equatable, Sendable {
+    var text: String
+    var styles: [TextStyle]
 }
 
 extension [ScriptRow] {

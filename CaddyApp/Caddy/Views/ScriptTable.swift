@@ -681,14 +681,14 @@ private struct ScriptCell: View {
             .frame(maxWidth: Self.cardWidth)
     }
 
-    /// Typing in a suggestion accepts it.
-    private func text(for id: ScriptElement.ID) -> Binding<String> {
+    /// Typing in a suggestion, or styling it, accepts it.
+    private func text(for id: ScriptElement.ID) -> Binding<RichText> {
         Binding {
-            row.elements.first { $0.id == id }?.text ?? ""
+            row.elements.first { $0.id == id }?.richText ?? RichText(text: "", styles: [])
         } set: { newValue in
             // Focusing a field can write its text back unchanged, which mustn't accept it.
-            guard let index = row.elements.firstIndex(where: { $0.id == id }), row.elements[index].text != newValue else { return }
-            row.elements[index].text = newValue
+            guard let index = row.elements.firstIndex(where: { $0.id == id }), row.elements[index].richText != newValue else { return }
+            row.elements[index].richText = newValue
             row.elements[index].source = nil
         }
     }
@@ -706,7 +706,7 @@ private struct ScriptCell: View {
 /// A confirmed card drags by its top edge to reorder it or move it to another row.
 private struct TableCard: View {
     let element: ScriptElement
-    @Binding var text: String
+    @Binding var text: RichText
     var focus: FocusState<PlaybackView.Focus?>.Binding
     let onAccept: () -> Void
     let onChangeKind: (ScriptElement.Kind) -> Void
@@ -723,12 +723,7 @@ private struct TableCard: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             KindMenu(kind: element.kind, onChange: onChangeKind)
                 .frame(width: 108, alignment: .leading)
-            TextField(element.kind.title, text: $text, prompt: Text(element.kind.prompt), axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineSpacing(3)
-                .focused(focus, equals: .element(element.id))
-                .onExitCommand { focus.wrappedValue = .player }
-                .labelsHidden()
+            RichTextField(prompt: element.kind.prompt, value: $text, focus: focus, id: element.id)
             actions
         }
         .padding(.horizontal, 10)
@@ -794,7 +789,7 @@ private struct TableCardFace: View {
             Label(element.kind.title, systemImage: element.kind.symbol)
                 .foregroundStyle(.secondary)
                 .frame(width: 108, alignment: .leading)
-            Text(element.text.isEmpty ? element.kind.prompt : element.text)
+            Text(element.text.isEmpty ? AttributedString(element.kind.prompt) : RichTextField.attributed(element.richText, base: .system(size: 13)))
                 .foregroundStyle(element.text.isEmpty ? .tertiary : .primary)
                 .lineSpacing(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
