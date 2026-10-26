@@ -87,17 +87,9 @@ struct LibraryView: View {
             LibrarySidebar(library: library, ui: ui)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 380)
         } detail: {
-            if let selection = ui.selection, let entry = library.entry(selection) {
-                ScriptHost(library: library, id: selection, title: entry.name, subtitle: library.project(entry.projectID)?.name ?? "")
-                    .id(selection)
-                    .navigationTitle(entry.name)
-                    .navigationSubtitle(library.project(entry.projectID)?.name ?? "")
-            } else {
-                NoScriptView { ui.add($0, to: ui.targetProject(in: library), in: library) } onChoose: {
-                    ui.chooseVideo(in: ui.targetProject(in: library))
-                }
-                .navigationTitle(library.project(ui.selection)?.name ?? "Caddy")
-            }
+            detail
+                // The same smallest size whether a script is open or not.
+                .frame(minWidth: 900, minHeight: 640)
         }
         .fileImporter(isPresented: $ui.isChoosingVideo, allowedContentTypes: [.mpeg4Movie, .quickTimeMovie]) { result in
             if case .success(let url) = result { ui.add([url], to: ui.videoProject, in: library) }
@@ -113,6 +105,21 @@ struct LibraryView: View {
             // Open on the projects, with the selected script's project showing.
             if ui.expanded.isEmpty { ui.expanded = Set(library.projects.map(\.id)) }
             if let selection = ui.selection, library.entry(selection) == nil, library.project(selection) == nil { ui.selection = nil }
+        }
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        if let selection = ui.selection, let entry = library.entry(selection) {
+            ScriptHost(library: library, id: selection, title: entry.name, subtitle: library.project(entry.projectID)?.name ?? "")
+                .id(selection)
+                .navigationTitle(entry.name)
+                .navigationSubtitle(library.project(entry.projectID)?.name ?? "")
+        } else {
+            NoScriptView { ui.add($0, to: ui.targetProject(in: library), in: library) } onChoose: {
+                ui.chooseVideo(in: ui.targetProject(in: library))
+            }
+            .navigationTitle(library.project(ui.selection)?.name ?? "Caddy")
         }
     }
 }

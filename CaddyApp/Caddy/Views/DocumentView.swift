@@ -45,7 +45,6 @@ struct DocumentView: View {
             if let spaceMonitor { NSEvent.removeMonitor(spaceMonitor) }
             spaceMonitor = nil
         }
-        .frame(minWidth: 900, minHeight: 640)
         .overlay { toolbarBackground }
         .background {
             // ⌘F has no toolbar button now; the player bar has Add Section.
@@ -113,8 +112,8 @@ struct DocumentView: View {
     }
 
     /// From the Figma header: the title on the left with the view toggle after
-    /// it, status and Sensitivity centred as separate glass groups, and Export
-    /// on the right.
+    /// it, status centred, and Sensitivity and Export on the right as separate
+    /// glass groups.
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
@@ -152,8 +151,7 @@ struct DocumentView: View {
                 onAcceptAll: acceptAllSuggestions
             )
         }
-        ToolbarSpacer(.fixed, placement: .principal)
-        ToolbarItem(placement: .principal) {
+        ToolbarItem(placement: .primaryAction) {
             Button("Detection Sensitivity", systemImage: "sparkles") { showSensitivity.toggle() }
                 .help("Sensitivity")
                 .disabled(script.videoPath == nil)
@@ -167,6 +165,8 @@ struct DocumentView: View {
                     )
                 }
         }
+        // Splits Sensitivity and Export into their own glass groups.
+        ToolbarSpacer(.fixed, placement: .primaryAction)
         ToolbarItem(placement: .primaryAction) {
             Button("Export…", systemImage: "square.and.arrow.up") { showExport = true }
                 .help("Export")
