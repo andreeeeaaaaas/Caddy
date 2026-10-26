@@ -23,7 +23,8 @@ final class LibraryUI {
         }
     }
 
-    var selection: Library.Entry.ID? {
+    /// A script or a project; their IDs never clash.
+    var selection: UUID? {
         didSet { UserDefaults.standard.set(selection?.uuidString, forKey: "selectedScript") }
     }
     var expanded: Set<Library.Project.ID> = []
@@ -38,9 +39,12 @@ final class LibraryUI {
         selection = UserDefaults.standard.string(forKey: "selectedScript").flatMap(UUID.init(uuidString:))
     }
 
-    /// Where new scripts go: the selected script's project, or none.
+    /// Where new scripts go: the selected project, the selected script's
+    /// project, or none.
     func targetProject(in library: Library) -> Library.Project.ID? {
-        selection.flatMap { library.entry($0)?.projectID }
+        guard let selection else { return nil }
+        if library.project(selection) != nil { return selection }
+        return library.entry(selection)?.projectID
     }
 
     func chooseVideo(in projectID: Library.Project.ID?) {
@@ -84,7 +88,7 @@ struct LibraryView: View {
                 .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 380)
         } detail: {
             if let selection = ui.selection, let entry = library.entry(selection) {
-                ScriptHost(library: library, id: selection)
+                ScriptHost(library: library, id: selection, title: entry.name, subtitle: library.project(entry.projectID)?.name ?? "")
                     .id(selection)
                     .navigationTitle(entry.name)
                     .navigationSubtitle(library.project(entry.projectID)?.name ?? "")
@@ -92,7 +96,7 @@ struct LibraryView: View {
                 NoScriptView { ui.add($0, to: ui.targetProject(in: library), in: library) } onChoose: {
                     ui.chooseVideo(in: ui.targetProject(in: library))
                 }
-                .navigationTitle("Caddy")
+                .navigationTitle(library.project(ui.selection)?.name ?? "Caddy")
             }
         }
         .fileImporter(isPresented: $ui.isChoosingVideo, allowedContentTypes: [.mpeg4Movie, .quickTimeMovie]) { result in
@@ -108,7 +112,7 @@ struct LibraryView: View {
         .onAppear {
             // Open on the projects, with the selected script's project showing.
             if ui.expanded.isEmpty { ui.expanded = Set(library.projects.map(\.id)) }
-            if let selection = ui.selection, library.entry(selection) == nil { ui.selection = nil }
+            if let selection = ui.selection, library.entry(selection) == nil, library.project(selection) == nil { ui.selection = nil }
         }
     }
 }
@@ -145,8 +149,25 @@ private struct LibrarySidebar: View {
             }
         }
         .listStyle(.sidebar)
+        // Return renames the selected row, as in Finder.
+        .onKeyPress(.return) {
+            guard ui.renaming == nil, let selection = ui.selection else { return .ignored }
+            if library.entry(selection) != nil {
+                ui.renaming = .script(selection)
+            } else if library.project(selection) != nil {
+                ui.renaming = .project(selection)
+            } else {
+                return .ignored
+            }
+            return .handled
+        }
         .onDeleteCommand {
-            if let selection = ui.selection, let entry = library.entry(selection) { ui.deleting = .script(entry) }
+            guard let selection = ui.selection else { return }
+            if let entry = library.entry(selection) {
+                ui.deleting = .script(entry)
+            } else if let project = library.project(selection) {
+                ui.deleting = .project(project)
+            }
         }
         .dropDestination(for: URL.self) { urls, _ in
             ui.add(urls, to: ui.targetProject(in: library), in: library)
@@ -193,7 +214,7 @@ private struct LibrarySidebar: View {
                     ui.renaming = nil
                 }
             } else {
-                Label(project.name, systemImage: "folder")
+                Label(project.name.displayName, systemImage: "folder")
                     .lineLimit(1)
             }
             Spacer()
@@ -202,6 +223,9 @@ private struct LibrarySidebar: View {
                 .foregroundStyle(.secondary)
         }
         .contentShape(.rect)
+        .tag(project.id)
+        // Simultaneous, so the list still selects the row on the first click.
+        .simultaneousGesture(TapGesture(count: 2).onEnded { ui.renaming = .project(project.id) })
         .dropDestination(for: ScriptDrag.self) { items, _ in
             move(items, to: project.id)
         }
@@ -221,13 +245,15 @@ private struct LibrarySidebar: View {
                     ui.renaming = nil
                 }
             } else {
-                Label(entry.name, systemImage: "doc.text.image")
+                Label(entry.name.displayName, systemImage: "doc.text.image")
                     .lineLimit(1)
             }
         }
         .tag(entry.id)
+        .contentShape(.rect)
+        .simultaneousGesture(TapGesture(count: 2).onEnded { ui.renaming = .script(entry.id) })
         .draggable(ScriptDrag(id: entry.id)) {
-            Label(entry.name, systemImage: "doc.text.image")
+            Label(entry.name.displayName, systemImage: "doc.text.image")
         }
         // Dropped on a script, a script joins that script's project.
         .dropDestination(for: ScriptDrag.self) { items, _ in
@@ -326,6 +352,8 @@ private struct RenameField: View {
 private struct ScriptHost: View {
     let library: Library
     let id: Library.Entry.ID
+    let title: String
+    let subtitle: String
 
     @State private var script: Script?
     @State private var failed = false
@@ -335,7 +363,7 @@ private struct ScriptHost: View {
     var body: some View {
         Group {
             if let script {
-                DocumentView(script: Binding { self.script ?? script } set: { self.script = $0 })
+                DocumentView(script: Binding { self.script ?? script } set: { self.script = $0 }, title: title, subtitle: subtitle)
             } else if failed {
                 ContentUnavailableView("Couldn't Open Script", systemImage: "exclamationmark.triangle", description: Text("Its file in the library is missing or damaged."))
             } else {

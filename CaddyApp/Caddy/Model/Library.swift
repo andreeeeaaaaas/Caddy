@@ -207,6 +207,14 @@ final class Library {
     }
 }
 
+extension String {
+    /// A script or project name as shown: cut to 30 characters with an
+    /// ellipsis. The full name is kept, and shown when renaming.
+    var displayName: String {
+        count > 30 ? prefix(29).trimmingCharacters(in: .whitespaces) + "…" : self
+    }
+}
+
 private extension JSONEncoder {
     static var library: JSONEncoder {
         let encoder = JSONEncoder()

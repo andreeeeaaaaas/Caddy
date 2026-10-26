@@ -5,9 +5,15 @@ struct CaddyApp: App {
     @State private var library = Library()
     @State private var ui = LibraryUI()
 
+    init() {
+        TextMenuCleaner.install()
+    }
+
     var body: some Scene {
         Window("Caddy", id: "library") {
             LibraryView(library: library, ui: ui)
+                // No Writing Tools button by the cursor or in text menus, in any field.
+                .writingToolsBehavior(.disabled)
         }
         .defaultSize(width: 1440, height: 860)
         .commands {

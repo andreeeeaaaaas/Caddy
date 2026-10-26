@@ -10,6 +10,9 @@ struct DocumentView: View {
     }
 
     @Binding var script: Script
+    /// The script's name and project, shown at the start of the toolbar.
+    var title = ""
+    var subtitle = ""
 
     @AppStorage("viewMode") private var viewMode = ViewMode.playback
     @State private var playback = Playback()
@@ -53,6 +56,8 @@ struct DocumentView: View {
                 .accessibilityHidden(true)
         }
         .toolbar { toolbar }
+        // Drawn by the toolbar itself, so the view toggle can follow it.
+        .toolbar(removing: .title)
         // macOS draws a toolbar backing only over scroll views, which left a
         // band over just the panel, so draw one across the window instead.
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
@@ -107,8 +112,27 @@ struct DocumentView: View {
         }
     }
 
+    /// From the Figma header: the title on the left with the view toggle after
+    /// it, status and Sensitivity centred as separate glass groups, and Export
+    /// on the right.
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title.displayName)
+                    .font(.headline)
+                    .lineLimit(1)
+                if !subtitle.isEmpty {
+                    Text(subtitle.displayName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 6)
+            .frame(maxWidth: 320, alignment: .leading)
+        }
+        .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .navigation) {
             Picker("View", selection: $viewMode) {
                 Label("Playback", systemImage: "play.rectangle").tag(ViewMode.playback)
@@ -128,7 +152,8 @@ struct DocumentView: View {
                 onAcceptAll: acceptAllSuggestions
             )
         }
-        ToolbarItemGroup(placement: .primaryAction) {
+        ToolbarSpacer(.fixed, placement: .principal)
+        ToolbarItem(placement: .principal) {
             Button("Detection Sensitivity", systemImage: "sparkles") { showSensitivity.toggle() }
                 .help("Sensitivity")
                 .disabled(script.videoPath == nil)
@@ -142,8 +167,6 @@ struct DocumentView: View {
                     )
                 }
         }
-        // Splits Sensitivity and Export into their own glass groups.
-        ToolbarSpacer(.fixed, placement: .primaryAction)
         ToolbarItem(placement: .primaryAction) {
             Button("Export…", systemImage: "square.and.arrow.up") { showExport = true }
                 .help("Export")

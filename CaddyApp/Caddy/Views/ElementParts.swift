@@ -121,11 +121,11 @@ struct KindPicker: View {
 /// Eight dots, four by two.
 struct GripDots: View {
     var body: some View {
-        Grid(horizontalSpacing: 2.5, verticalSpacing: 2.5) {
+        Grid(horizontalSpacing: 2, verticalSpacing: 2) {
             ForEach(0..<2, id: \.self) { _ in
                 GridRow {
                     ForEach(0..<4, id: \.self) { _ in
-                        Circle().frame(width: 3, height: 3)
+                        Circle().frame(width: 2, height: 2)
                     }
                 }
             }
@@ -255,7 +255,7 @@ struct ElementView: View {
             RichTextField(prompt: element.kind.prompt, value: $text, focus: focus, id: element.id)
         }
         .padding(.horizontal, 10)
-        .padding(.top, 14)
+        .padding(.top, 12)
         .padding(.bottom, 12)
         // A suggestion is tinted purple until it's confirmed; then it's a plain card that can be dragged.
         .background(element.isSuggested ? CaddyStyle.suggested.opacity(0.06) : CaddyStyle.field, in: .rect(cornerRadius: 12))
@@ -277,8 +277,8 @@ struct ElementView: View {
     private var handle: some View {
         GripDots()
             .opacity(isHovering ? 1 : 0)
-            .padding(.top, 3.5)
-            .frame(maxWidth: .infinity, minHeight: 14, alignment: .top)
+            .padding(.top, 3)
+            .frame(maxWidth: .infinity, minHeight: 12, alignment: .top)
             .contentShape(.rect)
             .pointerStyle(.grabIdle)
             .accessibilityHidden(true)
@@ -317,7 +317,7 @@ struct CardFace: View {
         }
         .font(.system(size: 13))
         .padding(.horizontal, 10)
-        .padding(.top, 14)
+        .padding(.top, 12)
         .padding(.bottom, 12)
         .background(CaddyStyle.field, in: .rect(cornerRadius: 12))
         // The field colour is translucent; nothing should show through a lifted card.

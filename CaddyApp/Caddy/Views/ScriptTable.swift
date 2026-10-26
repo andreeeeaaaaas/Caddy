@@ -717,7 +717,7 @@ private struct TableCard: View {
 
     /// The strip along the top that drags the card. The table's own gesture
     /// does the dragging, finding the card by this strip.
-    static let handleHeight: CGFloat = 12
+    static let handleHeight: CGFloat = 10
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -727,7 +727,7 @@ private struct TableCard: View {
             actions
         }
         .padding(.horizontal, 10)
-        .padding(.top, 12)
+        .padding(.top, 10)
         .padding(.bottom, 10)
         .background(element.isSuggested ? CaddyStyle.suggested.opacity(0.06) : CaddyStyle.field, in: .rect(cornerRadius: 8))
         // The tints are translucent; a solid backing keeps a highlighted row's blue out of them.
@@ -764,7 +764,7 @@ private struct TableCard: View {
     private var handle: some View {
         GripDots()
             .opacity(isHovering ? 1 : 0)
-            .padding(.top, 3)
+            .padding(.top, 2.5)
             .frame(maxWidth: .infinity, minHeight: Self.handleHeight, maxHeight: Self.handleHeight, alignment: .top)
             .contentShape(.rect)
             .pointerStyle(.grabIdle)
@@ -796,7 +796,7 @@ private struct TableCardFace: View {
         }
         .font(.system(size: 13))
         .padding(.horizontal, 10)
-        .padding(.top, 12)
+        .padding(.top, 10)
         .padding(.bottom, 10)
         .background(CaddyStyle.field, in: .rect(cornerRadius: 8))
         // The field colour is translucent; nothing should show through a lifted card.
