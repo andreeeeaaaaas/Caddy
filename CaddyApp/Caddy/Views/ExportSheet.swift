@@ -39,13 +39,12 @@ struct ExportSheet: View {
                         Grid(alignment: .leading, verticalSpacing: 8) {
                             GridRow {
                                 Text("Client")
-                                    .gridColumnAlignment(.trailing)
-                                TextField("Client", text: $client, prompt: Text("None"))
+                                TextField("Client", text: $client, prompt: Text("Required"))
                                     .labelsHidden()
                             }
                             GridRow {
                                 Text("Asset name")
-                                TextField("Asset name", text: $assetName, prompt: Text("Script"))
+                                TextField("Asset name", text: $assetName, prompt: Text("Required"))
                                     .labelsHidden()
                             }
                         }
@@ -95,7 +94,7 @@ struct ExportSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Export…", action: chooseFile)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(export != nil)
+                    .disabled(export != nil || trimmedClient.isEmpty || trimmedAssetName.isEmpty)
             }
         }
         .padding(22)
@@ -111,10 +110,7 @@ struct ExportSheet: View {
 
     private var trimmedClient: String { client.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-    private var trimmedAssetName: String {
-        let name = assetName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? "Script" : name
-    }
+    private var trimmedAssetName: String { assetName.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     /// The asset name, without characters a file name can't hold.
     private var fileName: String {
