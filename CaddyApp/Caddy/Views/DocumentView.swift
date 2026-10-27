@@ -61,6 +61,8 @@ struct DocumentView: View {
                 .accessibilityHidden(true)
         }
         .toolbar { toolbar }
+        // For File › Export…; none while there's nothing to export.
+        .focusedSceneValue(\.exportScript, rows.isEmpty ? nil : { showExport = true })
         // Drawn by the toolbar itself, so the view toggle can follow it.
         .toolbar(removing: .title)
         // macOS draws a toolbar backing only over scroll views, which left a
@@ -481,6 +483,22 @@ private struct EmptyDocumentView: View {
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.mpeg4Movie, .quickTimeMovie]) { result in
             if case .success(let url) = result { onChoose(url) }
         }
+    }
+}
+
+extension FocusedValues {
+    /// Opens the export sheet for the script in the window.
+    @Entry var exportScript: (() -> Void)?
+}
+
+/// File › Export…, for the script in the focused window.
+struct ExportButton: View {
+    @FocusedValue(\.exportScript) private var export
+
+    var body: some View {
+        Button("Export…") { export?() }
+            .keyboardShortcut("e", modifiers: [.command, .shift])
+            .disabled(export == nil)
     }
 }
 
