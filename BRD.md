@@ -3,7 +3,7 @@
 > A native macOS app that turns a finished ad into an editable CAD script, for the brand and creative team.
 
 **Status:** Rebuilding as a native macOS app (the Python web app is the reference build)
-**Last updated:** 2026-10-26
+**Last updated:** 2026-10-27
 
 ## How to use this document
 
@@ -67,6 +67,7 @@ process. The exact time target and export template are open (see section 6).
 - Inspector: full-size frame, segment playback, mark as checked
 - Word (DOCX) export
 - PDF export
+- Report an issue from the Help menu: a short form filed as a GitHub issue through a small relay, so reporters need no GitHub account
 
 ---
 
@@ -92,8 +93,8 @@ appears in the window as it completes.
      that row's segment, status (Pending, Checked) and the row's fields.
    - **Timeline** (bottom): filmstrip of the whole ad with playhead and a marker
      per row. "Add frame" (⌘F or the toolbar) inserts a row at the playhead.
-4. **Export.** A sheet chooses DOCX or PDF, the template, and whether to include
-   unchecked rows, with a preview, then saves the file.
+4. **Export.** A sheet chooses DOCX or PDF and what to include, with a preview,
+   then saves the file in the team's one CAD Script template.
 
 Generated text (transcript, suggested frames) stays marked as a draft until the
 user edits or accepts it.
@@ -115,6 +116,7 @@ user edits or accepts it.
 | Platform | macOS 26.2+, Apple silicon | Pending office hardware check (section 6) |
 | Distribution | Developer ID signed, hardened runtime, notarized, zipped | Team `TZSHUKU49X`, not sandboxed, not the Mac App Store |
 | Project | Xcode project, Swift Package Manager | |
+| Issue reports | Netlify function (`relay/`) that files GitHub issues | On a work Netlify account. The GitHub token (fine-grained, Issues on this repo only) lives only in Netlify. The app posts to `CaddyReportURL` in Info.plist; reports carry what the user types plus app version, macOS and Mac model |
 
 **Reference build**
 The Python app (`app.py`, `pipeline.py`, `storyboard.py`, `static/`) stays in the
@@ -137,6 +139,7 @@ detection, transcription and exports.
 - Add a Swift package or other dependency without asking.
 - Bundle a command-line tool (ffmpeg, Python) or require Homebrew.
 - Commit test videos, `workspace/`, `output/` or exported documents.
+- Ship a GitHub token or other credential in the app, or send scripts, frames or videos with an issue report.
 - Present machine-generated text as final; it is a draft until the user edits or accepts it.
 
 **Patterns**
@@ -159,6 +162,7 @@ detection, transcription and exports.
 - Command-line use.
 - New features in the Python web app; it is reference only.
 - A shared or synced team library (conflicts between editors).
+- Screenshots or logs attached to issue reports (GitHub's API can't attach files; they'd need storing elsewhere).
 
 ---
 
@@ -180,3 +184,4 @@ Flag and pause on these. Do not assume an answer.
 - [ ] Which roles use it, and has anyone used it on a real ad yet?
 - [ ] What may be shared outside the company? This is a work project.
 - [ ] `README.md` still describes the old CLI and OCR; rewrite it or drop it?
+- [ ] Who owns the work Netlify account and GitHub token for the issue relay, and who triages reported issues?
