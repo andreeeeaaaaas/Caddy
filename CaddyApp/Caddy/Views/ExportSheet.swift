@@ -22,7 +22,7 @@ struct ExportSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Export Script")
-                .font(.headline)
+                .font(.title2.bold())
 
             HStack(alignment: .top, spacing: 22) {
                 PagePreview(showThumbnails: options.includeThumbnails)
