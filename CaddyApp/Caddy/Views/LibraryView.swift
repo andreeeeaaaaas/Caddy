@@ -35,6 +35,7 @@ final class LibraryUI {
     var videoProject: Library.Project.ID?
     var isImporting = false
     var isShowingWelcome = false
+    var isReportingIssue = false
 
     init() {
         selection = UserDefaults.standard.string(forKey: "selectedScript").flatMap(UUID.init(uuidString:))
@@ -107,6 +108,7 @@ struct LibraryView: View {
         }) {
             WelcomeSheet { choosesVideoAfterWelcome = true }
         }
+        .sheet(isPresented: $ui.isReportingIssue) { ReportIssueSheet() }
         .alert("Something Went Wrong", isPresented: Binding { library.error != nil } set: { if !$0 { library.error = nil } }) {
             Button("OK") { library.error = nil }
         } message: {

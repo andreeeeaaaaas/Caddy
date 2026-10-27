@@ -38,6 +38,7 @@ struct CaddyApp: App {
             // In place of Caddy Help, which has no help book to open.
             CommandGroup(replacing: .help) {
                 Button("Show onboarding") { ui.isShowingWelcome = true }
+                Button("Report an issue…") { ui.isReportingIssue = true }
             }
         }
 
