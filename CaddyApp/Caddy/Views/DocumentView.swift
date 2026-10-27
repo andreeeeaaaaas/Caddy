@@ -408,8 +408,8 @@ private struct EmptyDocumentView: View {
         } description: {
             Text("Drop a finished ad here, or choose one.")
         } actions: {
-            Button("Choose Video…") { showImporter = true }
-                .buttonStyle(.borderedProminent)
+            Button("Choose a Video…") { showImporter = true }
+                .buttonStyle(CapsuleButtonStyle())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .dropDestination(for: URL.self) { urls, _ in

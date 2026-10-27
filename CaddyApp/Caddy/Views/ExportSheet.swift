@@ -13,7 +13,6 @@ struct ExportSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var options = ExportOptions()
-    @State private var template = "frog CAD script"
     @State private var export: Task<Void, Never>?
     @State private var failure: String?
 
@@ -33,13 +32,7 @@ struct ExportSheet: View {
                         Picker("Format", selection: $options.format) {
                             ForEach(ExportOptions.Format.allCases) { Text($0.rawValue).tag($0) }
                         }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                    }
-                    group("Template") {
-                        Picker("Template", selection: $template) {
-                            Text("frog CAD script").tag("frog CAD script")
-                        }
+                        .pickerStyle(.radioGroup)
                         .labelsHidden()
                     }
                     group("Include") {

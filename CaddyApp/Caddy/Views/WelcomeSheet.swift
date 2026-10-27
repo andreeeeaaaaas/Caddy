@@ -178,7 +178,7 @@ struct WelcomeSheet: View {
                 Text(isLast ? "Choose a Video…" : "Continue")
                     .contentTransition(.interpolate)
             }
-            .buttonStyle(TourButtonStyle())
+            .buttonStyle(CapsuleButtonStyle())
             .keyboardShortcut(.defaultAction)
         }
         .frame(height: 32)
@@ -208,8 +208,9 @@ struct WelcomeSheet: View {
 }
 
 /// The prominent capsule, drawn in SwiftUI so its width animates with its
-/// label (AppKit's `.borderedProminent` jumps to its new size).
-private struct TourButtonStyle: ButtonStyle {
+/// label (AppKit's `.borderedProminent` jumps to its new size). Also used for
+/// the empty states' Choose a Video….
+struct CapsuleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body.weight(.medium))

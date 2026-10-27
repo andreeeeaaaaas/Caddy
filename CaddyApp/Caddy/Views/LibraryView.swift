@@ -437,8 +437,8 @@ private struct NoScriptView: View {
         } description: {
             Text("Drop a finished ad here to start a new script or choose one")
         } actions: {
-            Button("Choose a video", action: onChoose)
-                .buttonStyle(.borderedProminent)
+            Button("Choose a Video…", action: onChoose)
+                .buttonStyle(CapsuleButtonStyle())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // A faint frog wordmark under the empty state.
