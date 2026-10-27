@@ -133,8 +133,7 @@ struct LibraryView: View {
     @ViewBuilder
     private var detail: some View {
         if let selection = ui.selection, let entry = library.entry(selection) {
-            ScriptHost(library: library, id: selection, title: entry.name, subtitle: library.project(entry.projectID)?.name ?? "",
-                       created: entry.created)
+            ScriptHost(library: library, id: selection, title: entry.name, subtitle: library.project(entry.projectID)?.name ?? "")
                 .id(selection)
                 .navigationTitle(entry.name)
                 .navigationSubtitle(library.project(entry.projectID)?.name ?? "")
@@ -387,7 +386,6 @@ private struct ScriptHost: View {
     let id: Library.Entry.ID
     let title: String
     let subtitle: String
-    let created: Date
 
     @State private var script: Script?
     @State private var failed = false
@@ -397,7 +395,7 @@ private struct ScriptHost: View {
     var body: some View {
         Group {
             if let script {
-                DocumentView(script: Binding { self.script ?? script } set: { self.script = $0 }, title: title, subtitle: subtitle, created: created)
+                DocumentView(script: Binding { self.script ?? script } set: { self.script = $0 }, title: title, subtitle: subtitle)
             } else if failed {
                 ContentUnavailableView("Couldn't Open Script", systemImage: "exclamationmark.triangle", description: Text("Its file in the library is missing or damaged."))
             } else {

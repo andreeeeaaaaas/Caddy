@@ -33,21 +33,21 @@ nonisolated struct ExportOptions: Sendable {
 /// A script laid out for export in the frog CAD script template: a table
 /// with #, Frame and Script columns and one row per section.
 nonisolated struct ExportDocument: Sendable {
-    /// The script's name.
+    /// The asset name, as typed in the export sheet.
     var title: String
-    /// The script's folder, if it's in one: the client.
-    var folder: String
-    /// When the script was made.
-    var created: Date
+    /// The client, as typed in the export sheet; empty for none.
+    var client: String
+    /// The day of the export.
+    var date: Date
     var options: ExportOptions
     var sections: [ExportSection]
 
-    /// The day the script was made, as the template has it: 26 Oct 2026.
-    var createdText: String {
+    /// The day of the export, as the template has it: 26 Oct 2026.
+    var dateText: String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "dd MMM yyyy"
-        return formatter.string(from: created)
+        return formatter.string(from: date)
     }
 }
 
@@ -79,7 +79,7 @@ nonisolated struct ExportImage: Sendable {
 nonisolated enum Exporter {
     /// Lays out the rows, without frames. Empty elements are left out, and
     /// scene descriptions and suggestions unless the options include them.
-    static func document(title: String, folder: String, created: Date, rows: [ScriptRow], fps: Double,
+    static func document(title: String, client: String, date: Date, rows: [ScriptRow], fps: Double,
                          options: ExportOptions) -> ExportDocument {
         let sections = rows.map { row in
             let elements = row.elements.filter { element in
@@ -93,7 +93,7 @@ nonisolated enum Exporter {
                 script: elements.map { ExportLine(label: $0.kind.exportLabel, text: $0.richText) }
             )
         }
-        return ExportDocument(title: title, folder: folder, created: created, options: options, sections: sections)
+        return ExportDocument(title: title, client: client, date: date, options: options, sections: sections)
     }
 
     /// Grabs each section's frame from the video. Frames it can't grab are left out.

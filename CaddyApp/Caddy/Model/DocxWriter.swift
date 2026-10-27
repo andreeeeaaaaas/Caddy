@@ -5,9 +5,10 @@ import Foundation
 /// there rather than here.
 ///
 /// - `{Client}`, `{Asset name}` and `{Date created …}` anywhere in the body,
-///   header or footer become the folder, the script's name and the day it was
-///   created. Not in a folder, `{Client}` is the script's name, or left out
-///   (with what separates it) where the asset name follows it.
+///   header or footer become the client and asset name typed in the export
+///   sheet and the day of the export. Without a client, `{Client}` is the
+///   asset name, or left out (with what separates it) where the asset name
+///   follows it.
 /// - The table's first row that isn't a repeated header is copied once per
 ///   section: the cell holding a number gets the section's, the one holding a
 ///   picture its frame (same width, the frame's shape), and the one holding
@@ -205,10 +206,10 @@ nonisolated enum DocxWriter {
         let joined = texts.map { $0.stringValue ?? "" }.joined().lowercased()
         guard joined.contains("{") else { return }
         let hasAsset = joined.contains("{asset")
-        // Out of a folder, the client is left out beside the asset name, or
-        // replaced by the script's name where it stands alone.
-        let dropClient = document.folder.isEmpty && hasAsset
-        let client = document.folder.isEmpty ? document.title : document.folder
+        // Without a client, it's left out beside the asset name, or replaced
+        // by the asset name where it stands alone.
+        let dropClient = document.client.isEmpty && hasAsset
+        let client = document.client.isEmpty ? document.title : document.client
         var droppingSeparator = false
         for text in texts {
             var value = text.stringValue ?? ""
@@ -228,7 +229,7 @@ nonisolated enum DocxWriter {
                 let key = match.output.1.lowercased().trimmingCharacters(in: .whitespaces)
                 if key.hasPrefix("client") { return client }
                 if key.hasPrefix("asset") { return document.title }
-                if key.hasPrefix("date") { return document.createdText }
+                if key.hasPrefix("date") { return document.dateText }
                 return String(match.output.0)
             }
             text.setText(clean(value))

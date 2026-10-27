@@ -5,16 +5,23 @@ import SwiftUI
 /// the DOCX or PDF is written.
 struct ExportSheet: View {
     let script: Script
-    var title = ""
-    /// The script's project.
-    var project = ""
-    var created = Date()
     var fps: Double = 25
 
     @Environment(\.dismiss) private var dismiss
+    /// For the template's `{Client}` and `{Asset name}`: the script's folder
+    /// and name to start with, editable before each export.
+    @State private var client: String
+    @State private var assetName: String
     @State private var options = ExportOptions()
     @State private var export: Task<Void, Never>?
     @State private var failure: String?
+
+    init(script: Script, title: String = "", project: String = "", fps: Double = 25) {
+        self.script = script
+        self.fps = fps
+        _client = State(initialValue: project)
+        _assetName = State(initialValue: title)
+    }
 
     private var rows: [ScriptRow] { script.rows }
     private var suggestionCount: Int { rows.map(\.suggestionCount).reduce(0, +) }
@@ -28,6 +35,21 @@ struct ExportSheet: View {
                 PagePreview(showThumbnails: options.includeThumbnails)
                     .frame(width: 150, height: 212)
                 VStack(alignment: .leading, spacing: 14) {
+                    group("Details") {
+                        Grid(alignment: .leading, verticalSpacing: 8) {
+                            GridRow {
+                                Text("Client")
+                                    .gridColumnAlignment(.trailing)
+                                TextField("Client", text: $client, prompt: Text("None"))
+                                    .labelsHidden()
+                            }
+                            GridRow {
+                                Text("Asset name")
+                                TextField("Asset name", text: $assetName, prompt: Text("Script"))
+                                    .labelsHidden()
+                            }
+                        }
+                    }
                     group("Format") {
                         Picker("Format", selection: $options.format) {
                             ForEach(ExportOptions.Format.allCases) { Text($0.rawValue).tag($0) }
@@ -87,9 +109,16 @@ struct ExportSheet: View {
         return "\(count) confirmed yet. " + (options.includeSuggestions ? "They'll be exported as they are." : "They'll be left out.")
     }
 
-    /// The script's name, without characters a file name can't hold.
+    private var trimmedClient: String { client.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private var trimmedAssetName: String {
+        let name = assetName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "Script" : name
+    }
+
+    /// The asset name, without characters a file name can't hold.
     private var fileName: String {
-        let name = title.components(separatedBy: CharacterSet(charactersIn: "/:")).joined(separator: "-")
+        let name = trimmedAssetName.components(separatedBy: CharacterSet(charactersIn: "/:")).joined(separator: "-")
             .trimmingCharacters(in: .whitespaces)
         return name.isEmpty ? "Script" : name
     }
@@ -115,8 +144,8 @@ struct ExportSheet: View {
     }
 
     private func write(to url: URL, options: ExportOptions) async {
-        var document = Exporter.document(title: title.isEmpty ? "Script" : title, folder: project,
-                                         created: created, rows: rows, fps: fps, options: options)
+        var document = Exporter.document(title: trimmedAssetName, client: trimmedClient,
+                                         date: Date(), rows: rows, fps: fps, options: options)
         if options.includeThumbnails, let videoURL = script.videoURL {
             let frames = await Exporter.frames(from: videoURL, at: document.sections.map(\.time))
             for index in document.sections.indices {

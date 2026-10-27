@@ -14,8 +14,6 @@ struct DocumentView: View {
     /// The script's name and project, shown at the start of the toolbar.
     var title = ""
     var subtitle = ""
-    /// When the script was made, for the export.
-    var created = Date()
 
     @AppStorage("viewMode") private var viewMode = ViewMode.playback
     @State private var playback = Playback()
@@ -69,7 +67,7 @@ struct DocumentView: View {
         // band over just the panel, so draw one across the window instead.
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .sheet(isPresented: $showExport) {
-            ExportSheet(script: script, title: title, project: subtitle, created: created, fps: playback.frameRate)
+            ExportSheet(script: script, title: title, project: subtitle, fps: playback.frameRate)
         }
         .task(id: script.videoPath) { await start() }
         .fileImporter(isPresented: $isLocating, allowedContentTypes: [.mpeg4Movie, .quickTimeMovie]) { result in

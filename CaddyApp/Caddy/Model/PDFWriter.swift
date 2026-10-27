@@ -3,7 +3,7 @@ import AppKit
 /// Writes an export as a PDF laid out like the Word template (see
 /// `DocxWriter`), measured from the template as Pages sets it: US Letter, the
 /// black CAD Script bar across the top of the first page, the client as the
-/// title with the script's name and created date under it, then the #, Frame
+/// title with the asset name and export date under it, then the #, Frame
 /// and Script table from margin to margin, its header repeated on each page and
 /// no section split across pages. The footer has the client, the script's name
 /// and the page; the template's logo sits on the bottom margin of the last page.
@@ -53,8 +53,8 @@ enum PDFWriter {
         let scriptX = side + numberColumn + (hasFrames ? frameColumn : 0)
         let scriptWidth = side + contentWidth - scriptX - padding * 2
 
-        // The heading: the client, or the script's name out of a folder.
-        let heading = text(document.folder.isEmpty ? document.title : document.folder, size: 26, lineHeight: 34.1, kern: -0.3)
+        // The heading: the client, or the asset name without one.
+        let heading = text(document.client.isEmpty ? document.title : document.client, size: 26, lineHeight: 34.1, kern: -0.3)
         let headingHeight = height(of: heading, width: contentWidth)
         let assetTop = top + headingHeight + 6
         let tableTop = assetTop + 15.7 * 2 + 14.9
@@ -102,7 +102,7 @@ enum PDFWriter {
                 draw(text("CAD Script", size: 16, lineHeight: barHeight, color: .white, center: true), x: 0, y: 1.9, width: page.width)
                 draw(heading, x: side, y: top, width: contentWidth)
                 draw(text(document.title, size: 12, lineHeight: 15.7, color: secondary), x: side, y: assetTop, width: contentWidth)
-                draw(text(document.createdText, size: 12, lineHeight: 15.7, color: secondary), x: side, y: assetTop + 15.7, width: contentWidth)
+                draw(text(document.dateText, size: 12, lineHeight: 15.7, color: secondary), x: side, y: assetTop + 15.7, width: contentWidth)
                 y = tableTop
             }
 
@@ -135,7 +135,7 @@ enum PDFWriter {
             }
 
             // The footer, and the logo on the last page.
-            let client = document.folder.isEmpty ? "" : document.folder + " - "
+            let client = document.client.isEmpty ? "" : document.client + " - "
             let footer = "\(client)\(document.title)   ·   Page \(index + 1) of \(pages.count)"
             draw(text(footer, size: 8, lineHeight: 10.5), x: side, y: 751.6, width: contentWidth)
             if index == pages.count - 1, let logo, let image = NSImage(data: logo.data) {
