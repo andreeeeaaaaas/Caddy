@@ -60,7 +60,7 @@ enum WelcomePage: Int, CaseIterable, Identifiable {
 }
 
 /// The welcome tour: an illustration, a title and a few lines per page, then
-/// Back, page dots, Skip and Continue. The last page ends on Choose a Video….
+/// Back, page dots, Skip and Continue. The last page ends on Choose a Video.
 /// Click an illustration to play it again.
 struct WelcomeSheet: View {
     var onChooseVideo: () -> Void = {}
@@ -165,7 +165,7 @@ struct WelcomeSheet: View {
             .buttonStyle(IconButtonStyle())
             .keyboardShortcut(.cancelAction)
 
-            // One capsule that stretches into Choose a Video… on the last
+            // One capsule that stretches into Choose a Video on the last
             // page, its label morphing, rather than a button swapped for another.
             Button {
                 if let next = WelcomePage(rawValue: page.rawValue + 1) {
@@ -175,7 +175,7 @@ struct WelcomeSheet: View {
                     dismiss()
                 }
             } label: {
-                Text(isLast ? "Choose a Video…" : "Continue")
+                Text(isLast ? "Choose a Video" : "Continue")
                     .contentTransition(.interpolate)
             }
             .buttonStyle(CapsuleButtonStyle())
@@ -209,7 +209,7 @@ struct WelcomeSheet: View {
 
 /// The prominent capsule, drawn in SwiftUI so its width animates with its
 /// label (AppKit's `.borderedProminent` jumps to its new size). Also used for
-/// the empty states' Choose a Video….
+/// the empty states' Choose a Video.
 struct CapsuleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

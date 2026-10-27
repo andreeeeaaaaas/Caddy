@@ -469,7 +469,7 @@ private struct EmptyDocumentView: View {
         } description: {
             Text("Drop a finished ad here, or choose one.")
         } actions: {
-            Button("Choose a Video…") { showImporter = true }
+            Button("Choose a Video") { showImporter = true }
                 .buttonStyle(CapsuleButtonStyle())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

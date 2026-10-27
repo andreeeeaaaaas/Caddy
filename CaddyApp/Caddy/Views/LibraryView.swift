@@ -87,7 +87,7 @@ final class LibraryUI {
 struct LibraryView: View {
     let library: Library
     @Bindable var ui: LibraryUI
-    /// The tour ended on Choose a Video…, so the file picker opens once it's gone.
+    /// The tour ended on Choose a Video, so the file picker opens once it's gone.
     @State private var choosesVideoAfterWelcome = false
 
     var body: some View {
@@ -448,7 +448,7 @@ private struct NoScriptView: View {
                 .lineLimit(1)
                 .fixedSize()
         } actions: {
-            Button("Choose a Video…", action: onChoose)
+            Button("Choose a Video", action: onChoose)
                 .buttonStyle(CapsuleButtonStyle())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
