@@ -69,9 +69,12 @@ private struct ScrubBar: View {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                     segment(index, row: row, width: width, current: current)
                 }
-                TimeBubble(time: playback.currentTime)
-                    .position(x: Self.inset + x(playback.currentTime, width), y: Self.centre - trackHeight / 2 - TimeBubble.height / 2)
-                    .allowsHitTesting(false)
+                // No time to show without the video.
+                if isEnabled {
+                    TimeBubble(time: playback.currentTime)
+                        .position(x: Self.inset + x(playback.currentTime, width), y: Self.centre - trackHeight / 2 - TimeBubble.height / 2)
+                        .allowsHitTesting(false)
+                }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
             .contentShape(.rect)
