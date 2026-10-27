@@ -260,7 +260,7 @@ private struct LibrarySidebar: View {
             move(items, to: project.id)
         }
         .contextMenu {
-            Button("New Script…", systemImage: "plus") { ui.chooseVideo(in: project.id) }
+            Button("New Script from Video…", systemImage: "plus") { ui.chooseVideo(in: project.id) }
             Button("Rename", systemImage: "pencil") { ui.renaming = .project(project.id) }
             Divider()
             Button("Delete Folder…", systemImage: "trash", role: .destructive) { ui.deleting = .project(project) }

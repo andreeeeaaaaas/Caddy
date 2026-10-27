@@ -19,12 +19,12 @@ struct CaddyApp: App {
         .commands {
             CommandGroup(replacing: .appInfo) { AboutButton() }
             CommandGroup(replacing: .newItem) {
-                Button("New Script…") { ui.chooseVideo(in: ui.targetProject(in: library)) }
+                Button("New Script from Video…") { ui.chooseVideo(in: ui.targetProject(in: library)) }
                     .keyboardShortcut("n")
                 Button("New Folder") { ui.newProject(in: library) }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
                 Divider()
-                Button("Import Script…") { ui.isImporting = true }
+                Button("Import .caddy File…") { ui.isImporting = true }
             }
             // Just what the cards' text keeps.
             CommandMenu("Format") {

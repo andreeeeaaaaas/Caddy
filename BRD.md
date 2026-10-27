@@ -78,7 +78,7 @@ beside it. There are no separate upload, select and processing screens; work
 appears in the window as it completes.
 
 1. **Start.** The sidebar lists projects (expandable, with script counts) and
-   scripts not in a project. Dropping a video on the window, or New Script (⌘N),
+   scripts not in a project. Dropping a video on the window, or New Script from Video… (⌘N),
    creates a script in the selected project, or outside any project.
 2. **Analyse.** The new script opens straight away with the video loaded.
    Analysis runs in the background with progress in the toolbar: scene markers
