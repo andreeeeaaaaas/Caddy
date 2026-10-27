@@ -60,6 +60,7 @@ final class LibraryUI {
         let id = library.addProject()
         if columns == .detailOnly { columns = .all }
         expanded.insert(id)
+        selection = id
         renaming = .project(id)
     }
 
@@ -354,11 +355,13 @@ private struct RenameField: View {
     let onDone: (String?) -> Void
 
     @State private var text = ""
+    /// The whole name, so typing replaces it, as in Finder.
+    @State private var textSelection: TextSelection?
     @FocusState private var isFocused: Bool
 
     var body: some View {
         Label {
-            TextField("Name", text: $text)
+            TextField("Name", text: $text, selection: $textSelection)
                 .textFieldStyle(.plain)
                 .focused($isFocused)
                 .onSubmit { onDone(text) }
@@ -368,6 +371,7 @@ private struct RenameField: View {
         }
         .onAppear {
             text = name
+            textSelection = TextSelection(range: text.startIndex..<text.endIndex)
             isFocused = true
         }
         .onChange(of: isFocused) {
