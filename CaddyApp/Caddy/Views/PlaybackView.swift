@@ -157,7 +157,7 @@ struct PlaybackView: View {
                     VStack(spacing: 6) {
                         Text("Video not found")
                             .font(.headline)
-                        Text("It may have been moved, renamed or deleted.\nYour script is safe.")
+                        Text("It may have been moved, renamed or deleted.\nYour script edits are saved.")
                             .multilineTextAlignment(.center)
                             .foregroundStyle(.white.opacity(0.6))
                         Button("Locate Video…", action: onLocate)

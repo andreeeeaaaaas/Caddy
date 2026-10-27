@@ -16,6 +16,8 @@ struct CaddyApp: App {
                 .writingToolsBehavior(.disabled)
         }
         .defaultSize(width: 1440, height: 860)
+        // Icons only, without the toolbar menu's Icon and Text option.
+        .windowToolbarLabelStyle(fixed: .iconOnly)
         .commands {
             CommandGroup(replacing: .appInfo) { AboutButton() }
             CommandGroup(replacing: .newItem) {
