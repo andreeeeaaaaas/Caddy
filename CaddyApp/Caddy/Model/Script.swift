@@ -6,9 +6,13 @@ extension UTType {
 }
 
 /// One ad's script. Saved as a `.caddy` package holding `script.json`, one per
-/// script in the library. The video is referenced by path, not copied in.
+/// script in the library. The video is referenced by path and bookmark, not
+/// copied in.
 nonisolated struct Script: Codable, Equatable {
     var videoPath: String?
+    /// A macOS bookmark to the video, which follows it through renames and
+    /// moves on the same disk. Nil in documents from before it, until they open.
+    var videoBookmark: Data?
     var rows: [ScriptRow] = []
     /// Set once analysis has run, so reopening a document doesn't redo it.
     var analysed = false
@@ -29,6 +33,37 @@ nonisolated struct Script: Codable, Equatable {
     }
 
     var videoURL: URL? { videoPath.map { URL(filePath: $0) } }
+
+    /// About how long the video analysed was: its last scored frame.
+    var analysedDuration: Double? { sceneScores?.last?.time }
+
+    /// Points the script at a video, with a bookmark to follow it.
+    mutating func setVideo(_ url: URL) {
+        videoPath = url.path
+        videoBookmark = try? url.bookmarkData()
+    }
+
+    /// The video, followed by its bookmark if it's been renamed or moved, with
+    /// the path and bookmark brought up to date. Nil if it can't be found, or
+    /// it's in the Trash.
+    mutating func locateVideo() -> URL? {
+        if let videoBookmark {
+            var isStale = false
+            if let url = try? URL(resolvingBookmarkData: videoBookmark, options: [.withoutUI, .withoutMounting],
+                                  bookmarkDataIsStale: &isStale),
+               Self.isAvailable(url) {
+                if isStale || url.path != videoPath { setVideo(url) }
+                return url
+            }
+        }
+        guard let url = videoURL, Self.isAvailable(url) else { return nil }
+        if videoBookmark == nil { videoBookmark = try? url.bookmarkData() }
+        return url
+    }
+
+    private static func isAvailable(_ url: URL) -> Bool {
+        FileManager.default.fileExists(atPath: url.path) && url.pathComponents.allSatisfy { $0 != ".Trash" && $0 != ".Trashes" }
+    }
 
     static let fileName = "script.json"
 

@@ -145,7 +145,7 @@ detection, transcription and exports.
 **Patterns**
 - Long jobs are Swift concurrency tasks that can be cancelled, owned by the document.
 - The document is the single source of truth; edits go through it so undo and autosave work.
-- Video files are referenced from the script, not copied into the library.
+- Video files are referenced from the script, not copied into the library: by path plus a macOS bookmark, so renaming or moving a video on the same disk doesn't break its script. A video that can't be found can be located again without losing edits.
 
 ---
 

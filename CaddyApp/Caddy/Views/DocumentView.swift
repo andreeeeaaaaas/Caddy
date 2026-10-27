@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -26,6 +27,9 @@ struct DocumentView: View {
     /// The time under the pointer while it skims a frame in the grid.
     @State private var skimTime: Double?
     @State private var videoMissing = false
+    @State private var isLocating = false
+    /// A chosen replacement whose length doesn't match, waiting on the user.
+    @State private var mismatch: Mismatch?
     /// The library window, so Space only acts there.
     @State private var window: NSWindow?
     @State private var spaceMonitor: Any?
@@ -36,7 +40,7 @@ struct DocumentView: View {
     var body: some View {
         Group {
             if script.videoPath == nil && rows.isEmpty {
-                EmptyDocumentView { url in script.videoPath = url.path }
+                EmptyDocumentView { url in script.setVideo(url) }
             } else {
                 workspace
             }
@@ -66,6 +70,16 @@ struct DocumentView: View {
             ExportSheet(script: script, title: title, project: subtitle, created: created, fps: playback.frameRate)
         }
         .task(id: script.videoPath) { await start() }
+        .fileImporter(isPresented: $isLocating, allowedContentTypes: [.mpeg4Movie, .quickTimeMovie]) { result in
+            if case .success(let url) = result { Task { await relink(to: url) } }
+        }
+        .alert("This video is a different length", isPresented: Binding { mismatch != nil } set: { if !$0 { mismatch = nil } },
+               presenting: mismatch) { mismatch in
+            Button("Use It Anyway") { script.setVideo(mismatch.url) }
+            Button("Cancel", role: .cancel) {}
+        } message: { mismatch in
+            Text("The script was made for a video about \(Timecode.minutes(mismatch.expected)) long, and this one is \(Timecode.minutes(mismatch.duration)). Its sections may not line up.")
+        }
         .onChange(of: script.sensitivity) {
             analyzer.applySensitivity(script: $script)
         }
@@ -99,7 +113,8 @@ struct DocumentView: View {
     private var workspace: some View {
         switch viewMode {
         case .playback:
-            PlaybackView(rows: $script.rows, selection: $selection, playback: playback)
+            PlaybackView(rows: $script.rows, selection: $selection, playback: playback,
+                         onLocate: videoMissing ? { isLocating = true } : nil)
         case .grid:
             ScriptTable(
                 rows: $script.rows,
@@ -149,6 +164,7 @@ struct DocumentView: View {
                 notice: analyzer.notice,
                 rows: rows,
                 videoMissing: videoMissing,
+                onLocate: { isLocating = true },
                 onNext: nextSuggestion,
                 onAcceptAll: acceptAllSuggestions
             )
@@ -177,13 +193,42 @@ struct DocumentView: View {
     }
 
     private func start() async {
-        guard let url = script.videoURL else { return }
-        videoMissing = !FileManager.default.fileExists(atPath: url.path)
-        guard !videoMissing else { return }
+        guard script.videoPath != nil else { return }
+        // Follow the video if it's been renamed or moved, and bookmark videos
+        // from before scripts kept one.
+        var located = script
+        let found = located.locateVideo()
+        if located.videoBookmark != script.videoBookmark || located.videoPath != script.videoPath {
+            let moved = located.videoPath != script.videoPath
+            script.videoPath = located.videoPath
+            script.videoBookmark = located.videoBookmark
+            // A new path starts this again.
+            if moved { return }
+        }
+        videoMissing = found == nil
+        guard let url = found else { return }
         await playback.load(url)
         if let asset = playback.asset { thumbnails.load(asset) }
         if !script.analysed {
             await analyzer.run(videoURL: url, script: $script)
+        }
+    }
+
+    /// Points the script at a video the user found, checking first that it's
+    /// about as long as the one the sections were made for.
+    private func relink(to url: URL) async {
+        let duration = (try? await AVURLAsset(url: url).load(.duration).seconds) ?? 0
+        // Without scene scores, only a video too short for the last section shows.
+        let differs = if let analysed = script.analysedDuration {
+            abs(duration - analysed) > 0.5
+        } else {
+            duration < (rows.last?.time ?? 0)
+        }
+        if differs {
+            let expected = script.analysedDuration ?? rows.last?.time ?? 0
+            mismatch = Mismatch(url: url, duration: duration, expected: expected)
+        } else {
+            script.setVideo(url)
         }
     }
 
@@ -276,12 +321,20 @@ private struct WindowReader: NSViewRepresentable {
     }
 }
 
+/// A replacement video whose length doesn't match the script's.
+private struct Mismatch {
+    let url: URL
+    let duration: Double
+    let expected: Double
+}
+
 /// Toolbar status: analysis progress, then a summary of the rows.
 private struct StatusView: View {
     let phase: Analyzer.Phase
     let notice: String?
     let rows: [ScriptRow]
     let videoMissing: Bool
+    let onLocate: () -> Void
     let onNext: () -> Void
     let onAcceptAll: () -> Void
 
@@ -293,8 +346,16 @@ private struct StatusView: View {
         HStack(spacing: 10) {
             switch phase {
             case _ where videoMissing:
-                Label("Video not found", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                // Spelled out, since a toolbar shows a Label as just its icon.
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text("Video not found")
+                }
+                Button("Locate…", action: onLocate)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tint)
+                    .help("Find the video, keeping everything in the script")
             case .findingScenes(let progress):
                 Text("Finding scenes · \(sections)")
                     .contentTransition(.numericText(value: Double(rows.count)))

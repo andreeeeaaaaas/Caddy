@@ -84,7 +84,9 @@ final class Library {
     /// A new script for a video, named after it.
     @discardableResult
     func createScript(videoURL: URL, in projectID: Project.ID?) -> Entry.ID? {
-        add(Script(videoPath: videoURL.path), name: videoURL.deletingPathExtension().lastPathComponent, in: projectID)
+        var script = Script()
+        script.setVideo(videoURL)
+        return add(script, name: videoURL.deletingPathExtension().lastPathComponent, in: projectID)
     }
 
     /// Copies a `.caddy` file into the library. The original is left alone.

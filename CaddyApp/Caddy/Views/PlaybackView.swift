@@ -7,6 +7,8 @@ struct PlaybackView: View {
     @Binding var rows: [ScriptRow]
     @Binding var selection: ScriptRow.ID?
     let playback: Playback
+    /// Set while the video can't be found: the player offers Locate Video….
+    var onLocate: (() -> Void)?
 
     enum Focus: Hashable {
         case player
@@ -148,6 +150,21 @@ struct PlaybackView: View {
     private var player: some View {
         PlayerView(player: playback.player, showsControls: false, gravity: .resizeAspect)
             .background(.black)
+            .overlay {
+                if let onLocate {
+                    VStack(spacing: 6) {
+                        Text("Video not found")
+                            .font(.headline)
+                        Text("It may have been moved, renamed or deleted.\nYour script is safe.")
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.white.opacity(0.6))
+                        Button("Locate Video…", action: onLocate)
+                            .buttonStyle(CapsuleButtonStyle())
+                            .padding(.top, 10)
+                    }
+                    .foregroundStyle(.white)
+                }
+            }
             .clipShape(.rect(cornerRadius: 8))
             .aspectRatio(16 / 9, contentMode: .fit)
             .frame(maxWidth: .infinity, alignment: .top)
