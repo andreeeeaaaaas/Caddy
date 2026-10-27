@@ -35,26 +35,24 @@ struct ExportSheet: View {
                 PagePreview(showThumbnails: options.includeThumbnails)
                     .frame(width: 150, height: 212)
                 // The Mac's dialog layout: right-aligned labels with colons, controls beside them.
+                // Sections add no space in this style, so the padding spaces the rows and groups.
                 Form {
-                    Section {
-                        TextField("Client:", text: $client, prompt: Text("Required"))
-                        TextField("Asset name:", text: $assetName, prompt: Text("Required"))
+                    TextField("Client:", text: $client, prompt: Text("Required"))
+                        .padding(.bottom, 6)
+                    TextField("Asset name:", text: $assetName, prompt: Text("Required"))
+                    Picker("Format:", selection: $options.format) {
+                        ForEach(ExportOptions.Format.allCases) { Text($0.rawValue).tag($0) }
                     }
-                    Section {
-                        Picker("Format:", selection: $options.format) {
-                            ForEach(ExportOptions.Format.allCases) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.radioGroup)
-                    }
-                    Section {
-                        LabeledContent("Include:") {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Toggle("Frame thumbnails", isOn: $options.includeThumbnails)
-                                Toggle("Scene descriptions", isOn: $options.includeSceneDescriptions)
-                                Toggle("Suggestions not yet confirmed", isOn: $options.includeSuggestions)
-                            }
+                    .pickerStyle(.radioGroup)
+                    .padding(.top, 14)
+                    LabeledContent("Include:") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Toggle("Frame thumbnails", isOn: $options.includeThumbnails)
+                            Toggle("Scene descriptions", isOn: $options.includeSceneDescriptions)
+                            Toggle("Suggestions not yet confirmed", isOn: $options.includeSuggestions)
                         }
                     }
+                    .padding(.top, 14)
                 }
                 .formStyle(.columns)
             }
