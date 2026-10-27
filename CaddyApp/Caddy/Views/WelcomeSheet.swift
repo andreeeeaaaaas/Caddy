@@ -136,12 +136,16 @@ struct WelcomeSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// A fixed height with the dots pinned to the middle, so nothing in it
+    /// moves as the buttons either side change.
     private var footer: some View {
-        HStack(spacing: 0) {
-            HStack {
+        HStack(spacing: 8) {
+            ZStack(alignment: .leading) {
                 if let previous = WelcomePage(rawValue: page.rawValue - 1) {
                     Button("Back") { go(to: previous) }
                         .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.large)
                         .transition(.opacity)
                 } else {
                     FrogWordmark(width: 100)
@@ -149,34 +153,36 @@ struct WelcomeSheet: View {
                         .transition(.opacity)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
 
-            PageDots(page: page) { go(to: $0) }
+            Spacer(minLength: 0)
 
-            HStack(spacing: 8) {
-                Button { dismiss() } label: {
-                    Text(isLast ? "Close" : "Skip")
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                }
-                .buttonStyle(IconButtonStyle())
-                .keyboardShortcut(.cancelAction)
-
-                Button(isLast ? "Choose a Video…" : "Continue") {
-                    if let next = WelcomePage(rawValue: page.rawValue + 1) {
-                        go(to: next)
-                    } else {
-                        onChooseVideo()
-                        dismiss()
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
+            Button { dismiss() } label: {
+                Text(isLast ? "Close" : "Skip")
+                    .contentTransition(.interpolate)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
             }
-            .frame(maxWidth: .infinity, alignment: .trailing)
+            .buttonStyle(IconButtonStyle())
+            .keyboardShortcut(.cancelAction)
+
+            // One capsule that stretches into Choose a Video… on the last
+            // page, its label morphing, rather than a button swapped for another.
+            Button {
+                if let next = WelcomePage(rawValue: page.rawValue + 1) {
+                    go(to: next)
+                } else {
+                    onChooseVideo()
+                    dismiss()
+                }
+            } label: {
+                Text(isLast ? "Choose a Video…" : "Continue")
+                    .contentTransition(.interpolate)
+            }
+            .buttonStyle(TourButtonStyle())
+            .keyboardShortcut(.defaultAction)
         }
-        .buttonBorderShape(.capsule)
-        .controlSize(.large)
+        .frame(height: 32)
+        .overlay { PageDots(page: page) { go(to: $0) } }
         .padding(.horizontal, 24)
         .padding(.top, 12)
         .padding(.bottom, 24)
@@ -198,6 +204,23 @@ struct WelcomeSheet: View {
         Task {
             withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : WelcomeMotion.page) { page = next }
         }
+    }
+}
+
+/// The prominent capsule, drawn in SwiftUI so its width animates with its
+/// label (AppKit's `.borderedProminent` jumps to its new size).
+private struct TourButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.medium))
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 16)
+            .frame(height: 30)
+            .background(Color.accentColor, in: .capsule)
+            .overlay(Capsule().fill(.black.opacity(configuration.isPressed ? 0.15 : 0)))
+            .contentShape(.capsule)
     }
 }
 
