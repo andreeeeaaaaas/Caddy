@@ -36,6 +36,8 @@ final class LibraryUI {
     var isImporting = false
     var isShowingWelcome = false
     var isReportingIssue = false
+    /// Whether the sidebar shows, so New Folder can open it to name the folder.
+    var columns = NavigationSplitViewVisibility.automatic
 
     init() {
         selection = UserDefaults.standard.string(forKey: "selectedScript").flatMap(UUID.init(uuidString:))
@@ -56,6 +58,7 @@ final class LibraryUI {
 
     func newProject(in library: Library) {
         let id = library.addProject()
+        if columns == .detailOnly { columns = .all }
         expanded.insert(id)
         renaming = .project(id)
     }
@@ -87,7 +90,7 @@ struct LibraryView: View {
     @State private var choosesVideoAfterWelcome = false
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $ui.columns) {
             LibrarySidebar(library: library, ui: ui)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 380)
         } detail: {
