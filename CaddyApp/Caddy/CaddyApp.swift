@@ -35,7 +35,8 @@ struct CaddyApp: App {
                 Button("Underline") { CardTextFormat.toggle(.underline) }
                     .keyboardShortcut("u")
             }
-            CommandGroup(after: .help) {
+            // In place of Caddy Help, which has no help book to open.
+            CommandGroup(replacing: .help) {
                 Button("Show Caddy onboarding") { ui.isShowingWelcome = true }
             }
         }
