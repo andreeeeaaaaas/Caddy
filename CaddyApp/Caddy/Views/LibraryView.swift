@@ -439,21 +439,12 @@ private struct NoScriptView: View {
     let onChoose: () -> Void
 
     @State private var isTargeted = false
-    /// Counts the page opening, so the icon bounces each time.
-    @State private var arrivals = 0
 
     var body: some View {
         ContentUnavailableView {
-            Label {
-                Text("Start a new script")
-            } icon: {
-                // Bounces as the page opens, and breathes while a file is held over it.
-                Image(systemName: "doc.text.image")
-                    .symbolEffect(.bounce.up.byLayer, value: arrivals)
-                    .symbolEffect(.breathe, isActive: isTargeted)
-            }
+            Label("Start a new script", systemImage: "doc.text.image")
         } description: {
-            Text("Drop a finished ad here, or choose one.")
+            Text("Drop a finished ad here, or choose one")
                 .lineLimit(1)
                 .fixedSize()
         } actions: {
@@ -469,11 +460,6 @@ private struct NoScriptView: View {
         }
         .background(isTargeted ? Color.accentColor.opacity(0.06) : .clear)
         .dropDestination(for: URL.self) { urls, _ in onDrop(urls) } isTargeted: { isTargeted = $0 }
-        .task {
-            // Once the page has settled in, so the bounce is seen.
-            try? await Task.sleep(for: .seconds(0.25))
-            arrivals += 1
-        }
     }
 }
 
