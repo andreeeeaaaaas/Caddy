@@ -21,12 +21,12 @@ struct CaddyApp: App {
         .commands {
             CommandGroup(replacing: .appInfo) { AboutButton() }
             CommandGroup(replacing: .newItem) {
-                Button("New Script from Video…") { ui.chooseVideo(in: ui.targetProject(in: library)) }
+                LibraryCommand("New Script from Video…") { ui.chooseVideo(in: ui.targetProject(in: library)) }
                     .keyboardShortcut("n")
-                Button("New Folder") { ui.newProject(in: library) }
+                LibraryCommand("New Folder") { ui.newProject(in: library) }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
                 Divider()
-                Button("Import .caddy File…") { ui.isImporting = true }
+                LibraryCommand("Import .caddy File…") { ui.isImporting = true }
             }
             CommandGroup(replacing: .importExport) { ExportButton() }
             // Just what the cards' text keeps.
@@ -40,8 +40,8 @@ struct CaddyApp: App {
             }
             // In place of Caddy Help, which has no help book to open.
             CommandGroup(replacing: .help) {
-                Button("Show onboarding") { ui.isShowingWelcome = true }
-                Button("Report an issue…") { ui.isReportingIssue = true }
+                LibraryCommand("Show onboarding") { ui.isShowingWelcome = true }
+                LibraryCommand("Report an issue…") { ui.isReportingIssue = true }
             }
         }
 
@@ -55,6 +55,26 @@ struct CaddyApp: App {
         .defaultPosition(.center)
         // Opened from the Caddy menu, not listed in the Window menu.
         .commandsRemoved()
+    }
+}
+
+/// A menu command that acts in the library window. Closing the window leaves
+/// Caddy running, so the command opens it (or brings it forward) first.
+struct LibraryCommand: View {
+    let title: String
+    let action: () -> Void
+    @Environment(\.openWindow) private var openWindow
+
+    init(_ title: String, action: @escaping () -> Void) {
+        self.title = title
+        self.action = action
+    }
+
+    var body: some View {
+        Button(title) {
+            openWindow(id: "library")
+            action()
+        }
     }
 }
 
