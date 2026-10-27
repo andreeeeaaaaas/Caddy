@@ -34,34 +34,29 @@ struct ExportSheet: View {
             HStack(alignment: .top, spacing: 22) {
                 PagePreview(showThumbnails: options.includeThumbnails)
                     .frame(width: 150, height: 212)
-                VStack(alignment: .leading, spacing: 14) {
-                    group("Details") {
-                        Grid(alignment: .leading, verticalSpacing: 8) {
-                            GridRow {
-                                Text("Client")
-                                TextField("Client", text: $client, prompt: Text("Required"))
-                                    .labelsHidden()
-                            }
-                            GridRow {
-                                Text("Asset name")
-                                TextField("Asset name", text: $assetName, prompt: Text("Required"))
-                                    .labelsHidden()
-                            }
-                        }
+                // The Mac's dialog layout: right-aligned labels with colons, controls beside them.
+                Form {
+                    Section {
+                        TextField("Client:", text: $client, prompt: Text("Required"))
+                        TextField("Asset name:", text: $assetName, prompt: Text("Required"))
                     }
-                    group("Format") {
-                        Picker("Format", selection: $options.format) {
+                    Section {
+                        Picker("Format:", selection: $options.format) {
                             ForEach(ExportOptions.Format.allCases) { Text($0.rawValue).tag($0) }
                         }
                         .pickerStyle(.radioGroup)
-                        .labelsHidden()
                     }
-                    group("Include") {
-                        Toggle("Frame thumbnails", isOn: $options.includeThumbnails)
-                        Toggle("Scene descriptions", isOn: $options.includeSceneDescriptions)
-                        Toggle("Suggestions not yet confirmed", isOn: $options.includeSuggestions)
+                    Section {
+                        LabeledContent("Include:") {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Toggle("Frame thumbnails", isOn: $options.includeThumbnails)
+                                Toggle("Scene descriptions", isOn: $options.includeSceneDescriptions)
+                                Toggle("Suggestions not yet confirmed", isOn: $options.includeSuggestions)
+                            }
+                        }
                     }
                 }
+                .formStyle(.columns)
             }
 
             if let warning {
@@ -164,16 +159,6 @@ struct ExportSheet: View {
             dismiss()
         } catch {
             failure = "Couldn't save the file. \(error.localizedDescription)"
-        }
-    }
-
-    private func group<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-            content()
         }
     }
 }
