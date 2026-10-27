@@ -52,12 +52,13 @@ private struct ScrubBar: View {
     let onTrackFrame: (CGRect) -> Void
 
     @State private var isHovering = false
+    @Environment(\.isEnabled) private var isEnabled
 
     private static let inset: CGFloat = 16
     private static let gap: CGFloat = 2
     private static let centre: CGFloat = 30
 
-    private var isExpanded: Bool { isHovering || isLooping || dropTarget != nil }
+    private var isExpanded: Bool { (isHovering && isEnabled) || isLooping || dropTarget != nil }
     private var trackHeight: CGFloat { isExpanded ? 12 : 8 }
 
     var body: some View {
@@ -85,6 +86,8 @@ private struct ScrubBar: View {
         }
         .frame(height: 60)
         .background(.black.opacity(0.85), in: .rect(cornerRadius: 16))
+        // Dimmed like the bar's buttons when disabled.
+        .opacity(isEnabled ? 1 : 0.4)
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .named(PlaybackView.space)).insetBy(dx: Self.inset, dy: 0)
         } action: { onTrackFrame($0) }

@@ -74,6 +74,8 @@ struct PlaybackView: View {
                 dropTarget: drag?.section,
                 onTrackFrame: { trackFrame = $0 }
             )
+            // Nothing to play without the video.
+            .disabled(onLocate != nil)
             .simultaneousGesture(DragGesture(minimumDistance: 0).onEnded { _ in stopEditing() })
         }
         .padding(EdgeInsets(top: 0, leading: 40, bottom: 24, trailing: 40))
