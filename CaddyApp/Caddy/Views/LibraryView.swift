@@ -227,8 +227,8 @@ private struct LibrarySidebar: View {
 
     private var deletionTitle: String {
         switch ui.deleting {
-        case .script(let entry): "Delete “\(entry.name)”?"
-        case .project(let project): "Delete “\(project.name)”?"
+        case .script(let entry): "Delete “\(entry.name.displayName)”?"
+        case .project(let project): "Delete “\(project.name.displayName)”?"
         case nil: ""
         }
     }
