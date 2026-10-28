@@ -50,15 +50,9 @@ struct DocumentView: View {
             spaceMonitor = nil
         }
         .overlay { toolbarBackground }
-        .background {
-            // ⌘F has no toolbar button now; the player bar has Add Section.
-            Button("Add Section", action: addSection)
-                .keyboardShortcut("f", modifiers: .command)
-                .disabled(script.videoPath == nil || rows.hasFrame(at: newSectionTime))
-                .opacity(0)
-                .accessibilityHidden(true)
-        }
         .toolbar { toolbar }
+        // For Edit › Split Section (⌘F); none while there's nothing to split.
+        .focusedSceneValue(\.splitSection, splitAction)
         // For File › Export…; none while there's nothing to export.
         .focusedSceneValue(\.exportScript, rows.isEmpty ? nil : { showExport = true })
         // Drawn by the toolbar itself, so the view toggle can follow it.
@@ -253,13 +247,19 @@ struct DocumentView: View {
         }
     }
 
-    /// Where ⌘F adds a section: the skimmed point in the grid, otherwise the playhead.
-    private var newSectionTime: Double {
+    /// Where ⌘F splits: the skimmed point in the grid, otherwise the playhead.
+    private var splitTime: Double {
         skimTime ?? playback.currentTime
     }
 
-    private func addSection() {
-        if let id = $script.rows.add(at: newSectionTime, undoManager: undoManager) {
+    /// Edit › Split Section's action, or none while there's no video or a section already starts there.
+    private var splitAction: (() -> Void)? {
+        guard script.videoPath != nil, !rows.hasFrame(at: splitTime) else { return nil }
+        return splitSection
+    }
+
+    private func splitSection() {
+        if let id = $script.rows.add(at: splitTime, undoManager: undoManager) {
             selection = id
         }
     }
@@ -497,6 +497,19 @@ private struct EmptyDocumentView: View {
 extension FocusedValues {
     /// Opens the export sheet for the script in the window.
     @Entry var exportScript: (() -> Void)?
+    /// Splits the section at the playhead, or the skimmed point in the grid.
+    @Entry var splitSection: (() -> Void)?
+}
+
+/// Edit › Split Section, for the script in the focused window.
+struct SplitButton: View {
+    @FocusedValue(\.splitSection) private var split
+
+    var body: some View {
+        Button("Split Section") { split?() }
+            .keyboardShortcut("f")
+            .disabled(split == nil)
+    }
 }
 
 /// File › Export…, for the script in the focused window.

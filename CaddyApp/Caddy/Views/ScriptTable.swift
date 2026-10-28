@@ -17,7 +17,7 @@ struct ScriptTable: View {
     @Binding var selection: ScriptRow.ID?
     let playback: Playback
     let thumbnails: Thumbnails
-    /// The time under the pointer while it skims a frame, where ⌘F adds a section.
+    /// The time under the pointer while it skims a frame, where ⌘F splits the section.
     @Binding var skimTime: Double?
     /// Opens a section in the playback view.
     let onOpen: (ScriptRow.ID) -> Void
@@ -205,7 +205,7 @@ struct ScriptTable: View {
                 Button("Confirm Suggestions", systemImage: "checkmark.circle") { acceptAll(row.id) }
             }
             Divider()
-            Button("Delete Section \(index + 1)", systemImage: "trash", role: .destructive) { delete(row.id) }
+            Button("Join with Previous", systemImage: "arrow.merge") { delete(row.id) }
                 .disabled(index == 0)
         }
     }

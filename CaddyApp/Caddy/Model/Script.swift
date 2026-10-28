@@ -437,7 +437,7 @@ extension Binding<[ScriptRow]> {
     func merge(_ id: ScriptRow.ID, undoManager: UndoManager?) -> ScriptRow.ID? {
         var rows = wrappedValue
         guard let kept = rows.merge(id) else { return nil }
-        replace(with: rows, undoManager: undoManager, actionName: "Delete Section")
+        replace(with: rows, undoManager: undoManager, actionName: "Join Sections")
         return kept
     }
 
@@ -449,7 +449,7 @@ extension Binding<[ScriptRow]> {
         var rows = wrappedValue
         rows.append(row)
         rows.sort { $0.time < $1.time }
-        replace(with: rows, undoManager: undoManager, actionName: "Add Section")
+        replace(with: rows, undoManager: undoManager, actionName: "Split Section")
         return row.id
     }
 

@@ -1,12 +1,12 @@
 import SwiftUI
 
 /// The player's transport, from the Figma toolbar: play, a bar with one
-/// block per section, loop and add section.
+/// block per section, loop and split section.
 struct PlayerBar: View {
     let rows: [ScriptRow]
     let playback: Playback
     @Binding var isLooping: Bool
-    let onAdd: () -> Void
+    let onSplit: () -> Void
     let onPlay: (ScriptRow.ID) -> Void
     let onLoop: (ScriptRow.ID) -> Void
     let onDelete: (ScriptRow.ID) -> Void
@@ -29,9 +29,9 @@ struct PlayerBar: View {
                 Button("Loop", systemImage: "repeat") { isLooping.toggle() }
                     .buttonStyle(BarButtonStyle(width: 84, isOn: isLooping))
                     .help(isLooping ? "Stop looping this section (L)" : "Loop this section (L)")
-                Button("Add Section", systemImage: "plus", action: onAdd)
+                Button("Split Section", systemImage: "scissors", action: onSplit)
                     .buttonStyle(BarButtonStyle(width: 75))
-                    .help("Add a section at the playhead (⌘F)")
+                    .help("Split the section at the playhead (⌘F)")
                     .disabled(rows.hasFrame(at: playback.currentTime))
             }
         }
@@ -201,7 +201,7 @@ struct FrameMenu: View {
         Button("Play Section \(number)", systemImage: "play.fill", action: play)
         Button("Loop Section \(number)", systemImage: "repeat", action: loop)
         Divider()
-        Button("Delete Section \(number)", systemImage: "trash", role: .destructive, action: delete)
+        Button("Join with Previous", systemImage: "arrow.merge", action: delete)
             .keyboardShortcut(.delete, modifiers: [])
             .disabled(!canDelete)
     }
@@ -254,7 +254,7 @@ private struct BarButton: View {
         rows: Script.sample.rows,
         playback: Playback(),
         isLooping: .constant(false),
-        onAdd: {}, onPlay: { _ in }, onLoop: { _ in }, onDelete: { _ in }
+        onSplit: {}, onPlay: { _ in }, onLoop: { _ in }, onDelete: { _ in }
     )
     .padding(40)
 }

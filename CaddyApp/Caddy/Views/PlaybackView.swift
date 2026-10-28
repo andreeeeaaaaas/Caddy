@@ -67,7 +67,7 @@ struct PlaybackView: View {
                 rows: rows,
                 playback: playback,
                 isLooping: $isLooping,
-                onAdd: addSection,
+                onSplit: splitSection,
                 onPlay: playSection,
                 onLoop: loopSection,
                 onDelete: deleteSection,
@@ -275,7 +275,7 @@ struct PlaybackView: View {
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { panelFrame = $0 }
             }
         } else {
-            ContentUnavailableView("No Section", systemImage: "rectangle.split.3x1", description: Text("Play the ad or add a section with ⌘F."))
+            ContentUnavailableView("No Section", systemImage: "rectangle.split.3x1", description: Text("Play the ad, or press ⌘F to split it into sections."))
         }
     }
 
@@ -308,7 +308,7 @@ struct PlaybackView: View {
         if !playback.isPlaying { playback.togglePlay() }
     }
 
-    private func addSection() {
+    private func splitSection() {
         if let id = $rows.add(at: playback.currentTime, undoManager: undoManager) { selection = id }
     }
 

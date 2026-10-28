@@ -29,6 +29,10 @@ struct CaddyApp: App {
                 LibraryCommand("Import .caddy File…") { ui.isImporting = true }
             }
             CommandGroup(replacing: .importExport) { ExportButton() }
+            CommandGroup(after: .pasteboard) {
+                Divider()
+                SplitButton()
+            }
             // Just what the cards' text keeps.
             CommandMenu("Format") {
                 Button("Bold") { CardTextFormat.toggle(.bold) }

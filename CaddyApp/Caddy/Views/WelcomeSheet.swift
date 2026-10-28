@@ -52,7 +52,7 @@ enum WelcomePage: Int, CaseIterable, Identifiable {
     /// Shortcuts shown under the text: key, then what it does.
     var keys: [(key: String, action: String)] {
         switch self {
-        case .views: [("Space", "Play or pause"), ("L", "Loop"), ("↑ ↓", "Sections"), ("⌘F", "Add section")]
+        case .views: [("Space", "Play or pause"), ("L", "Loop"), ("↑ ↓", "Sections"), ("⌘F", "Split section")]
         case .suggestions: [("⏎", "Confirm all")]
         default: []
         }
