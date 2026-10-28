@@ -193,8 +193,10 @@ enum PDFWriter {
         let font = font(size: size, medium: medium, bold: bold, italic: italic)
         // Text sits at the top of its line, as Pages sets the template, or in
         // the middle for the bar. A fixed line height otherwise leaves the
-        // extra space above it.
-        let extra = lineHeight - (font.ascender - font.descender)
+        // extra space above it. The offset comes from Book whatever the run's
+        // face, so a Medium label and bold or italic words share its baseline.
+        let book = Self.font(size: size, medium: false, bold: false, italic: false)
+        let extra = lineHeight - (book.ascender - book.descender)
         var attributes: [NSAttributedString.Key: Any] = [
             .font: font, .foregroundColor: color, .paragraphStyle: paragraph,
             .baselineOffset: center ? extra / 2 : extra,
