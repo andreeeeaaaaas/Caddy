@@ -422,6 +422,7 @@ private struct SensitivityView: View {
     let hasScores: Bool
     let isBusy: Bool
     let detect: () -> Void
+    @State private var sliderDraw = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -436,6 +437,7 @@ private struct SensitivityView: View {
                     Text("Every change")
                 }
                 .labelsHidden()
+                .id(sliderDraw)
                 HStack {
                     Text("\(sectionCount) \(sectionCount == 1 ? "section" : "sections")")
                         .monospacedDigit()
@@ -455,6 +457,14 @@ private struct SensitivityView: View {
         }
         .padding(16)
         .frame(width: 320)
+        .task {
+            // macOS 26 leaves the knob undrawn in a popover until it's touched;
+            // rebuilding the slider once the popover is on screen draws it. Fixed in 27.
+            if #unavailable(macOS 27) {
+                try? await Task.sleep(for: .milliseconds(50))
+                sliderDraw += 1
+            }
+        }
     }
 }
 
