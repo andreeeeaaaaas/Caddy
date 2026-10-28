@@ -48,6 +48,12 @@ struct ScriptTable: View {
     /// Each cell's own inset from its column's edges.
     fileprivate static let cellPadding: CGFloat = 8
 
+    /// The table stops where its cards do and is centred in a wider window,
+    /// rather than leaving the space to the right of the cards empty.
+    private var maxWidth: CGFloat {
+        Self.numberWidth + frameWidth + timeWidth + ScriptCell.cardWidth + Self.cellPadding * 2
+    }
+
     private var isEditingText: Bool {
         if case .element = focus { true } else { false }
     }
@@ -73,6 +79,9 @@ struct ScriptTable: View {
                     }
                 }
                 .scrollTargetLayout()
+                // Centred inside the content space, so cards are still measured from its edge.
+                .frame(maxWidth: maxWidth)
+                .frame(maxWidth: .infinity)
                 .padding(.horizontal, Self.inset)
                 .padding(.vertical, 6)
                 .coordinateSpace(.named(Self.contentSpace))
@@ -121,6 +130,8 @@ struct ScriptTable: View {
             HeaderCell(title: "Script")
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: maxWidth)
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, Self.inset)
         .frame(height: 28)
     }
