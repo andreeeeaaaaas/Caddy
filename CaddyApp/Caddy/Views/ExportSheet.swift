@@ -165,19 +165,22 @@ struct ExportSheet: View {
 private struct PagePreview: View {
     let showThumbnails: Bool
 
+    /// Fixed, not `.secondary`: the page is white in both modes, and dark mode's light grey vanishes on it.
+    private let ink = Color.black.opacity(0.12)
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            bar(70, 6, .secondary.opacity(0.5))
-            bar(50, 4, CaddyStyle.placeholder)
+            bar(70, 6, .black.opacity(0.4))
+            bar(50, 4, ink)
             ForEach(0..<5, id: \.self) { _ in
                 HStack(alignment: .top, spacing: 6) {
                     if showThumbnails {
-                        Rectangle().fill(CaddyStyle.placeholder).frame(width: 40, height: 24)
+                        Rectangle().fill(ink).frame(width: 40, height: 24)
                     }
                     VStack(alignment: .leading, spacing: 4) {
-                        bar(76, 4, CaddyStyle.placeholder)
-                        bar(60, 4, CaddyStyle.placeholder)
-                        bar(44, 4, CaddyStyle.placeholder.opacity(0.6))
+                        bar(76, 4, ink)
+                        bar(60, 4, ink)
+                        bar(44, 4, ink.opacity(0.6))
                     }
                 }
             }
