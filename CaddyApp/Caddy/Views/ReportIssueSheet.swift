@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Help › Report an issue…: a summary, what happened and who to follow up
 /// with, sent to the issue relay with the app and Mac's details. If it can't
-/// be sent, the report can be copied instead.
+/// be sent, or the build has no relay, the report can be copied instead.
 struct ReportIssueSheet: View {
     @Environment(\.dismiss) private var dismiss
     /// Remembered, so it's filled in next time.
@@ -35,6 +35,7 @@ struct ReportIssueSheet: View {
         }
         .padding(22)
         .frame(width: 480)
+        .onChange(of: report.plainText) { copied = false }
         .onDisappear { sending?.cancel() }
     }
 
@@ -70,9 +71,12 @@ struct ReportIssueSheet: View {
                 .labelsHidden()
         }
 
-        Text("\(IssueReport.System.current.summary) is sent with it. Your scripts and videos aren’t.")
+        Text(IssueReport.isSetUp
+             ? "\(IssueReport.System.current.summary) is sent with it. Your scripts and videos aren’t."
+             : "Copy the report, then paste it into an email or message. It includes \(IssueReport.System.current.summary), but not your scripts or videos.")
             .font(.caption)
             .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
 
         if let failure {
             Label(failure, systemImage: "xmark.octagon.fill")
@@ -81,24 +85,41 @@ struct ReportIssueSheet: View {
                 .symbolRenderingMode(.multicolor)
         }
 
-        HStack {
-            if failure != nil {
-                Button(copied ? "Copied" : "Copy Report", action: copy)
-                    .disabled(!isComplete)
+        if IssueReport.isSetUp {
+            HStack {
+                if failure != nil {
+                    copyButton
+                }
+                if sending != nil {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Sending…")
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Send", action: send)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!isComplete || sending != nil)
             }
-            if sending != nil {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Sending…")
-                    .foregroundStyle(.secondary)
+        } else {
+            // No relay in this build: copying is the way to send it.
+            HStack {
+                Spacer()
+                Button(copied ? "Done" : "Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                copyButton
+                    .keyboardShortcut(.defaultAction)
             }
-            Spacer()
-            Button("Cancel", role: .cancel) { dismiss() }
-                .keyboardShortcut(.cancelAction)
-            Button("Send", action: send)
-                .keyboardShortcut(.defaultAction)
-                .disabled(!isComplete || sending != nil)
         }
+    }
+
+    private var copyButton: some View {
+        Button(action: copy) {
+            Label(copied ? "Copied" : "Copy Report", systemImage: copied ? "checkmark" : "doc.on.doc")
+        }
+        .disabled(!isComplete)
     }
 
     private func confirmation(_ issue: Int) -> some View {
