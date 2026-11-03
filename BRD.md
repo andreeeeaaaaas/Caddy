@@ -3,7 +3,7 @@
 > A native macOS app that turns a finished ad into an editable CAD script, for the brand and creative team.
 
 **Status:** Rebuilding as a native macOS app (the Python web app is the reference build)
-**Last updated:** 2026-10-27
+**Last updated:** 2026-11-03
 
 ## How to use this document
 
@@ -114,7 +114,7 @@ user edits or accepts it.
 | Supers | Vision `RecognizeTextRequest` | On device. Draft text; in-scene signage is read too |
 | Export | DOCX: OOXML written from a template and zipped. PDF: Core Graphics / PDFKit | |
 | Platform | macOS 26.2+, Apple silicon | Pending office hardware check (section 6) |
-| Distribution | Developer ID signed, hardened runtime, notarized, zipped | Team `TZSHUKU49X`, not sandboxed, not the Mac App Store |
+| Distribution | Developer ID signed, hardened runtime, notarized, zipped | Team `TZSHUKU49X`, not sandboxed, not the Mac App Store. `CaddyApp/release.sh <version>` archives, exports with `ExportOptions.plist`, notarises with the `caddy-notary` keychain profile (an app-specific password) and staples; output in `CaddyApp/build/release/<version>/` |
 | Project | Xcode project, Swift Package Manager | |
 | Issue reports | Netlify function (`relay/`) that files GitHub issues | On a work Netlify account. The GitHub token (fine-grained, Issues on this repo only) lives only in Netlify. The app posts to `CaddyReportURL` in Info.plist; reports carry what the user types plus app version, macOS and Mac model |
 
@@ -184,4 +184,5 @@ Flag and pause on these. Do not assume an answer.
 - [ ] Which roles use it, and has anyone used it on a real ad yet?
 - [ ] What may be shared outside the company? This is a work project.
 - [ ] `README.md` still describes the old CLI and OCR; rewrite it or drop it?
+- [ ] Change the bundle ID to reverse DNS (`com.andreasthoma.Caddy`, now `andreasthoma.Caddy`) before the first public release? Changing it later moves the app's preferences.
 - [ ] Who owns the work Netlify account and GitHub token for the issue relay, and who triages reported issues?
