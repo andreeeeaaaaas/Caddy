@@ -8,7 +8,7 @@ Turn a finished ad into an editable CAD script, without screenshotting every fra
 
 Before an ad goes to air, the brand and creative team has to produce a CAD script: the audio and vision script, voiceovers, jingles, graphics, supers and disclaimers. Done by hand, that means grabbing a copy of the finished asset, screenshotting every frame change, noting down everything on screen and in the audio, and assembling it all in a Word document. For a one-minute ad, that's around 20 minutes, every time.
 
-Caddy is a native Mac app that does the legwork. Drop in a finished video and it proposes the sections, reads the on-screen text, transcribes the voiceover and fills in a script for you to check and edit. Then you export a Word or PDF document that's ready to send.
+Caddy is a native Mac app, built for frog's brand and creative team, that does the legwork. Drop in a finished video and it proposes the sections, reads the on-screen text, transcribes the voiceover and fills in a script for you to check and edit. Then you export a Word or PDF document that's ready to send.
 
 ## What it does
 
