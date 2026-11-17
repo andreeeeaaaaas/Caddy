@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="caddy-logo.png" alt="Caddy" width="128">
+  <img src="caddy-logo.png" alt="Caddy" width="360">
 </p>
 
 # Caddy
@@ -12,14 +12,11 @@ Caddy is a native Mac app, built for frog's brand and creative team, that does t
 
 ## What it does
 
-- **Finds the sections for you.** Caddy detects scene changes and proposes a section for each one. Split a section where you want one, or join it back into the one before.
-- **Suggests the content.** On-screen text becomes suggested Supers (fine print such as offer terms goes to Disclaimers), and the voiceover is transcribed and placed in the section it belongs to.
-- **Keeps you in charge.** Suggestions are tinted purple and are only drafts. Confirm them one at a time or all at once, edit them, or dismiss them. Dismissed suggestions don't come back.
-- **Edits like a script.** Each section holds elements in the order they happen: scene description, voiceover, super (on-screen text), sound effect, music and disclaimer. Drag them to reorder, move them between sections, duplicate them, or change their type. Text supports bold, italic and underline.
-- **Two views.** Playback shows the video with the current section beside it. The grid shows every section as a row, with frames you can skim by hovering.
-- **Adjustable detection.** The sparkles button in the toolbar sets how sensitive scene and text detection are. Sections you've already edited are never replaced.
-- **Exports to Word or PDF.** Choose a client name, asset name and what to include (frames, scene descriptions, suggestions). The export uses the team's CAD script layout.
-- **Keeps a library.** Scripts save as you work and live in one window, grouped into folders. Rename, move and delete from the sidebar, or drag a script onto a folder.
+- **Finds the sections.** Caddy spots scene changes and proposes a section for each.
+- **Suggests the content.** On-screen text and the voiceover are filled in as purple drafts.
+- **You stay in charge.** Confirm, edit or dismiss each suggestion.
+- **Edits like a script.** Drag elements to reorder them, in playback or grid view.
+- **Exports to Word or PDF.** Using the team's CAD script layout.
 
 ## Privacy
 
@@ -66,9 +63,8 @@ Caddy follows a video through renames and moves on the same disk. If it can't fi
 ## Limitations
 
 - Suggestions are drafts. Read the whole script before it goes anywhere.
-- Text recognition can struggle with stylised or animated type, and it reads text in the scene (signage, for example) as well as supers. Dismiss anything that isn't a super.
+- Text recognition can misread stylised type, and picks up signage too. Dismiss anything that isn't a super.
 - You can't yet add an existing script alongside the video.
-- Substantiation documents aren't part of the export.
 
 ## Feedback
 
