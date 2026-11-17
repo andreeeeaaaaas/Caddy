@@ -1,7 +1,0 @@
-faster-whisper
-python-docx
-Pillow
-fastapi
-uvicorn[standard]
-python-multipart
-reportlab

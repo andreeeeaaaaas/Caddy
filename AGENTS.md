@@ -2,61 +2,9 @@
 
 This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
-## Setup
+## The app (`CaddyApp/`)
 
-```bash
-pip install -r requirements.txt
-# First run downloads Whisper base model (~150MB)
-```
-
-Requires `ffmpeg` and `ffprobe` on PATH (`brew install ffmpeg`), version 5.1 or newer (scene detection uses `-fps_mode`, which replaced `-vsync`).
-
-## Running
-
-```bash
-./launch.sh
-# or
-uvicorn app:app --reload
-```
-
-The app runs as a FastAPI web server. Open `http://localhost:8000` in a browser.
-
-## Architecture
-
-Three files:
-
-- `app.py` — FastAPI server, session state, HTTP routes
-- `pipeline.py` — background pipeline logic, PDF export via ReportLab
-- `storyboard.py` — core functions (metadata, audio, transcription, alignment, DOCX generation) plus a legacy CLI entrypoint
-
-### User flow
-
-1. User uploads a video via the UI (`/api/upload`)
-2. Server reads metadata (`get_video_metadata`) and kicks off auto scene-detect frame extraction in a background thread (`_extract_auto_frames`)
-3. UI shows the video player and auto-detected frame thumbnails; user selects which timecodes to include
-4. User submits selected timecodes (`/api/process`), which starts `run_pipeline` in a background thread
-5. UI polls `/api/progress/{session_id}` via SSE for progress updates
-
-### Pipeline steps (run_pipeline in pipeline.py)
-
-1. **extract_frames_at_timecodes** — ffmpeg extracts one JPEG per selected timecode to `workspace/{session_id}/frames/`
-2. **extract_audio** — ffmpeg extracts mono 16kHz WAV (skipped if no audio track or `no_transcribe` option set)
-3. **transcribe_audio** — faster-whisper transcribes the WAV; result cached to `workspace/{session_id}/transcript.json`
-4. **align_transcript** — transcript segments assigned to frame windows by `start_seconds`
-5. **build_rows** — assembles final row dicts (timecode, thumbnail path, transcript, supers, notes, status)
-
-### Post-processing
-
-- UI displays rows in an editable script sheet; user can edit VO, supers, jingle, graphics, and notes
-- Clicking a row opens an inspect drawer: full-size frame, segment player, mark as checked (`status` PENDING/CHECKED), delete frame, and add frame at the playhead
-- Edited rows are saved back via `POST /api/rows/{session_id}`
-- `POST /api/frame/{session_id}` extracts one frame at a time and returns a new empty row (used by "Add frame")
-- "Re-select frames" re-runs the pipeline and discards all edits
-- Export: `GET /api/export/docx/{session_id}` (python-docx) or `GET /api/export/pdf/{session_id}` (ReportLab)
-
-## Native app (`CaddyApp/`)
-
-The SwiftUI rebuild (see BRD). Open `CaddyApp/Caddy.xcodeproj`. Swift 6, default actor isolation `MainActor`, macOS 26.2+, folder-synced group, so every file in `CaddyApp/Caddy/` is compiled. `Info.plist` sits outside that folder and declares the `.caddy` package type (`andreasthoma.caddy.document`).
+A native SwiftUI Mac app (see BRD). No Python, ffmpeg or other tools are needed; the old Python web app was removed (it's in git history). Open `CaddyApp/Caddy.xcodeproj`. Swift 6, default actor isolation `MainActor`, macOS 26.2+, folder-synced group, so every file in `CaddyApp/Caddy/` is compiled. `Info.plist` sits outside that folder and declares the `.caddy` package type (`andreasthoma.caddy.document`).
 
 - `CaddyApp.swift`: one `Window` holding `LibraryView` (sidebar of projects and scripts), menu commands, and `VideoFile` (mp4/mov/m4v; AVFoundation can't read MKV or AVI)
 - `Model/Library.swift`: the local library in `~/Library/Application Support/Caddy`: `library.json` (projects, names) and one `.caddy` package per script
@@ -77,13 +25,5 @@ The SwiftUI rebuild (see BRD). Open `CaddyApp/Caddy.xcodeproj`. Swift 6, default
 Model types are `nonisolated` so `FileDocument` can read and write them off the main actor. Detection and transcription are `@concurrent` and take a URL, since `AVAsset` isn't `Sendable`. Frame times get `Playback.frameNudge` (1 ms) before conversion to `CMTime`, or grabs can land on the previous frame.
 
 Test ad: `~/Documents/Work/frog/HRB-MaxYourTax_Hero_16x9_15_OP59-v09.mp4` (15 s). Expected frames at the default sensitivity: 0, 7.08, 9.24, 10.92, 13.12, 14.08. Expected supers: "Don't tax yourself" (10.92), "MAX YOUR TAX" (13.12), "H&R BLOCK® / IN-OFFICE | ONLINE" (14.08); "H&R BLOCK®" at 9.24 and 10.92 is the wall sign.
-
-## Key Constants
-
-| Constant | Default | Purpose |
-|---|---|---|
-| `DEFAULT_SCENE_THRESHOLD` | 0.4 | ffmpeg scene filter sensitivity (auto-frame extraction) |
-| `DEFAULT_INTERVAL` | 2 | Seconds between frames in legacy CLI interval mode |
-| `SUPPORTED_FORMATS` | mp4/mov/mkv/avi | Validated at upload |
 
 ## Imported Claude Cowork project instructions

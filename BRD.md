@@ -2,7 +2,7 @@
 
 > A native macOS app that turns a finished ad into an editable CAD script, for the brand and creative team.
 
-**Status:** Rebuilding as a native macOS app (the Python web app is the reference build)
+**Status:** Rebuilding as a native macOS app (the Python web app has been removed; it's in git history)
 **Last updated:** 2026-10-27
 
 ## How to use this document
@@ -118,11 +118,6 @@ user edits or accepts it.
 | Project | Xcode project, Swift Package Manager | |
 | Issue reports | Netlify function (`relay/`) that files GitHub issues | On a work Netlify account. The GitHub token (fine-grained, Issues on this repo only) lives only in Netlify. The app posts to `CaddyReportURL` in Info.plist; reports carry what the user types plus app version, macOS and Mac model |
 
-**Reference build**
-The Python app (`app.py`, `pipeline.py`, `storyboard.py`, `static/`) stays in the
-repo, unchanged, as the reference for pipeline behaviour and for comparing scene
-detection, transcription and exports.
-
 ---
 
 ## 4. Rules
@@ -160,7 +155,6 @@ detection, transcription and exports.
 - Local vision-model descriptions of frames.
 - Auto-updates (Sparkle).
 - Command-line use.
-- New features in the Python web app; it is reference only.
 - A shared or synced team library (conflicts between editors).
 - Screenshots or logs attached to issue reports (GitHub's API can't attach files; they'd need storing elsewhere).
 
