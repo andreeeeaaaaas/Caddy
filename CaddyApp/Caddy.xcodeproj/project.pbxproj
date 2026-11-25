@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		CADD00000000000000000020 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CADD00000000000000000022 /* Sparkle */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		CADD00000000000000000005 /* Caddy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Caddy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CADD00000000000000000010 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -24,6 +28,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CADD00000000000000000020 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -67,6 +72,7 @@
 			);
 			name = Caddy;
 			packageProductDependencies = (
+				CADD00000000000000000022 /* Sparkle */,
 			);
 			productName = Caddy;
 			productReference = CADD00000000000000000005 /* Caddy.app */;
@@ -96,6 +102,9 @@
 			);
 			mainGroup = CADD00000000000000000002;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				CADD00000000000000000021 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CADD00000000000000000003 /* Products */;
 			projectDirPath = "";
@@ -277,6 +286,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		CADD00000000000000000021 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.10.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		CADD00000000000000000022 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CADD00000000000000000021 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = CADD00000000000000000001 /* Project object */;
 }

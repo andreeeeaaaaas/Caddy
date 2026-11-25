@@ -3,7 +3,7 @@
 > A native macOS app that turns a finished ad into an editable CAD script, for the brand and creative team.
 
 **Status:** Rebuilding as a native macOS app (the Python web app is the reference build)
-**Last updated:** 2026-11-03
+**Last updated:** 2026-11-25
 
 ## How to use this document
 
@@ -56,7 +56,7 @@ document the team can send as-is, in noticeably less time than the current manua
 process. The exact time target and export template are open (see section 6).
 
 **Scope**
-- Signed, notarized app distributed as a zip, no runtime dependencies
+- Signed, notarized app distributed as a zip, updating itself with Sparkle (its only dependency)
 - Local library in one window: a sidebar of projects holding scripts, plus scripts not in a project; scripts save as they're edited
 - Drop or open a video, with a metadata check
 - Auto-suggested frames at scene changes, shown as suggestions to accept or reject
@@ -114,7 +114,7 @@ user edits or accepts it.
 | Supers | Vision `RecognizeTextRequest` | On device. Draft text; in-scene signage is read too |
 | Export | DOCX: OOXML written from a template and zipped. PDF: Core Graphics / PDFKit | |
 | Platform | macOS 26.2+, Apple silicon | Pending office hardware check (section 6) |
-| Distribution | Developer ID signed, hardened runtime, notarized, zipped | Team `TZSHUKU49X`, not sandboxed, not the Mac App Store. `CaddyApp/release.sh <version>` archives, exports with `ExportOptions.plist`, notarises with the `caddy-notary` keychain profile (an app-specific password) and staples; output in `CaddyApp/build/release/<version>/` |
+| Distribution | Developer ID signed, hardened runtime, notarized, zipped | Team `TZSHUKU49X`, not sandboxed, not the Mac App Store. `CaddyApp/release.sh <version>` archives, exports with `ExportOptions.plist`, notarises with the `caddy-notary` keychain profile (an app-specific password) and staples; output in `CaddyApp/build/release/<version>/`. It then writes a Sparkle appcast (signed with the EdDSA key in the login Keychain, account `caddy`) and, after asking, publishes the zip and `appcast.xml` as GitHub release `v<version>`, which the app checks daily (`SUFeedURL`: the latest release's `appcast.xml`) |
 | Project | Xcode project, Swift Package Manager | |
 | Issue reports | Netlify function (`relay/`) that files GitHub issues | On a work Netlify account. The GitHub token (fine-grained, Issues on this repo only) lives only in Netlify. The app posts to `CaddyReportURL` in Info.plist; reports carry what the user types plus app version, macOS and Mac model |
 
@@ -158,7 +158,6 @@ detection, transcription and exports.
 
 **Out of scope**: not in this build, may come later
 - Local vision-model descriptions of frames.
-- Auto-updates (Sparkle).
 - Command-line use.
 - New features in the Python web app; it is reference only.
 - A shared or synced team library (conflicts between editors).

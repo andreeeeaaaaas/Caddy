@@ -6,6 +6,12 @@
 	<string></string>
 	<key>CaddyReportKey</key>
 	<string></string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/andreeeeaaaaas/Caddy/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>vILhL0OUgHOWT+UwpyLFDsAfQveRvJuOfQqtA8+MvM0=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

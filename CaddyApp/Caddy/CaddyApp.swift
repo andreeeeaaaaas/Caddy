@@ -4,6 +4,7 @@ import SwiftUI
 struct CaddyApp: App {
     @State private var library = Library()
     @State private var ui = LibraryUI()
+    @State private var updater = Updater()
 
     init() {
         TextMenuCleaner.install()
@@ -19,7 +20,10 @@ struct CaddyApp: App {
         // Icons only, without the toolbar menu's Icon and Text option.
         .windowToolbarLabelStyle(fixed: .iconOnly)
         .commands {
-            CommandGroup(replacing: .appInfo) { AboutButton() }
+            CommandGroup(replacing: .appInfo) {
+                AboutButton()
+                CheckForUpdatesButton(updater: updater)
+            }
             CommandGroup(replacing: .newItem) {
                 LibraryCommand("New Script from Video…") { ui.chooseVideo(in: ui.targetProject(in: library)) }
                     .keyboardShortcut("n")
