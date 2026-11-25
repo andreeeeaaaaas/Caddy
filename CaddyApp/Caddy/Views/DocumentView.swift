@@ -297,7 +297,7 @@ struct DocumentView: View {
 }
 
 /// Reports the window a view is in.
-private struct WindowReader: NSViewRepresentable {
+struct WindowReader: NSViewRepresentable {
     let onWindow: (NSWindow?) -> Void
 
     func makeNSView(context: Context) -> NSView { WindowView(onWindow: onWindow) }

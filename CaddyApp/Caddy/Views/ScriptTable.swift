@@ -35,6 +35,8 @@ struct ScriptTable: View {
     @State private var rightClickMonitor: Any?
     @State private var drag: GridDrag?
     @State private var layout = GridLayout()
+    /// Cards picked with ⇧- or ⌘-click, to delete together.
+    @State private var elementSelection = ElementSelection()
     @Environment(\.undoManager) private var undoManager
 
     /// The coordinate space a dragged card moves in, above the scroll view.
@@ -89,6 +91,10 @@ struct ScriptTable: View {
             }
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { layout.scrollFrame = $0 }
         }
+        .overlay(alignment: .bottom) {
+            SelectionBar()
+                .padding(.bottom, 16)
+        }
         .overlay(alignment: .topLeading) { liftedCard }
         // Cards drag from here rather than from their own handles: a lazy row
         // scrolled off screen would end its gesture mid-drag.
@@ -115,6 +121,7 @@ struct ScriptTable: View {
         }
         .onChange(of: loopRange) { playback.setLoop(loopRange) }
         .onDisappear { playback.setLoop(nil) }
+        .elementSelection(elementSelection, rows: $rows, order: rows.flatMap { $0.elements.map(\.id) })
     }
 
     // MARK: Layout
@@ -203,6 +210,11 @@ struct ScriptTable: View {
             Button("Open in Playback", systemImage: "play.rectangle") { onOpen(row.id) }
             if row.suggestionCount > 0 {
                 Button("Confirm Suggestions", systemImage: "checkmark.circle") { acceptAll(row.id) }
+            }
+            if elementSelection.count > 0 {
+                Divider()
+                Button(elementSelection.count == 1 ? "Delete Selected Element" : "Delete \(elementSelection.count) Selected Elements",
+                       systemImage: "trash", role: .destructive) { elementSelection.requestDelete() }
             }
             Divider()
             Button("Join with Previous", systemImage: "arrow.merge") { delete(row.id) }
@@ -725,6 +737,9 @@ private struct TableCard: View {
     let onDelete: () -> Void
 
     @State private var isHovering = false
+    @Environment(ElementSelection.self) private var selection: ElementSelection?
+
+    private var isSelected: Bool { selection?.contains(element.id) == true }
 
     /// The strip along the top that drags the card. The table's own gesture
     /// does the dragging, finding the card by this strip.
@@ -740,6 +755,7 @@ private struct TableCard: View {
         .padding(.horizontal, 10)
         .padding(.top, 10)
         .padding(.bottom, 10)
+        .background(isSelected ? Color.accentColor.opacity(0.12) : .clear, in: .rect(cornerRadius: 8))
         .background(element.isSuggested ? CaddyStyle.suggested.opacity(0.06) : CaddyStyle.field, in: .rect(cornerRadius: 8))
         // The tints are translucent; a solid backing keeps a highlighted row's blue out of them.
         .background(.background, in: .rect(cornerRadius: 8))
@@ -747,11 +763,20 @@ private struct TableCard: View {
             if !element.isSuggested { handle }
         }
         .overlay {
-            if focus.wrappedValue == .element(element.id) {
+            if focus.wrappedValue == .element(element.id) || isSelected {
                 RoundedRectangle(cornerRadius: 8).strokeBorder(Color.accentColor, lineWidth: 2)
             }
         }
-        .onHover { isHovering = $0 }
+        // A click outside the text, type and buttons picks the card, ending any editing.
+        .contentShape(.rect(cornerRadius: 8))
+        .onTapGesture {
+            focus.wrappedValue = nil
+            selection?.select(element.id)
+        }
+        .onHover { isHovering in
+            self.isHovering = isHovering
+            selection?.hover(element.id, isHovering)
+        }
     }
 
     @ViewBuilder

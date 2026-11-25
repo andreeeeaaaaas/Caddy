@@ -29,6 +29,8 @@ struct PlaybackView: View {
     /// The video's frame, which the panel lines up with.
     @State private var videoFrame = CGRect.zero
     @FocusState private var focus: Focus?
+    /// Cards picked with ⇧- or ⌘-click, to delete together. Only the shown section's.
+    @State private var elementSelection = ElementSelection()
     @Environment(\.undoManager) private var undoManager
 
     private var selectedIndex: Int? {
@@ -58,6 +60,10 @@ struct PlaybackView: View {
                 panel
                     .frame(width: 363)
                     .frame(maxHeight: .infinity)
+                    .overlay(alignment: .bottom) {
+                        SelectionBar()
+                            .padding(.bottom, 12)
+                    }
                     .padding(.bottom, 16)
                     .ignoresSafeArea(.container, edges: .top)
             }
@@ -95,6 +101,7 @@ struct PlaybackView: View {
         }
         .onDisappear { playback.setLoop(nil) }
         .task(id: autoScrollSpeed) { await autoScroll() }
+        .elementSelection(elementSelection, rows: $rows, order: selectedIndex.map { rows[$0].elements.map(\.id) } ?? [])
     }
 
     // MARK: Dragging
@@ -404,6 +411,7 @@ private struct SectionPanel: View {
     let onDragStart: () -> Void
 
     @State private var isPicking = false
+    @Environment(ElementSelection.self) private var selection: ElementSelection?
     /// Each card's frame in `PlaybackView.space`. The dragged card's is its slot.
     @State private var frames: [ScriptElement.ID: CGRect] = [:]
     /// The other cards' frames when the drag began, which decide where it lands.
@@ -560,7 +568,11 @@ private struct SectionPanel: View {
         }
         Divider()
         Button("Duplicate", systemImage: "plus.square.on.square") { duplicate(element) }
-        Button(element.isSuggested ? "Dismiss" : "Delete", systemImage: "trash", role: .destructive) { delete(element) }
+        if let selection, selection.contains(element.id), selection.count > 1 {
+            Button("Delete \(selection.count) Selected", systemImage: "trash", role: .destructive) { selection.requestDelete() }
+        } else {
+            Button(element.isSuggested ? "Dismiss" : "Delete", systemImage: "trash", role: .destructive) { delete(element) }
+        }
     }
 
     private var header: some View {

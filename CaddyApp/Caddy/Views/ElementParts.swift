@@ -232,8 +232,10 @@ struct ElementView: View {
     let onDragEnded: (DragGesture.Value) -> Void
 
     @State private var isHovering = false
+    @Environment(ElementSelection.self) private var selection: ElementSelection?
 
     private var isFocused: Bool { focus.wrappedValue == .element(element.id) }
+    private var isSelected: Bool { selection?.contains(element.id) == true }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -257,6 +259,7 @@ struct ElementView: View {
         .padding(.horizontal, 10)
         .padding(.top, 12)
         .padding(.bottom, 12)
+        .background(isSelected ? Color.accentColor.opacity(0.12) : .clear, in: .rect(cornerRadius: 12))
         // A suggestion is tinted purple until it's confirmed; then it's a plain card that can be dragged.
         .background(element.isSuggested ? CaddyStyle.suggested.opacity(0.06) : CaddyStyle.field, in: .rect(cornerRadius: 12))
         // The tints are translucent; a solid backing keeps a selected grid row's blue out of them.
@@ -265,11 +268,20 @@ struct ElementView: View {
             if !element.isSuggested { handle }
         }
         .overlay {
-            if isFocused {
+            if isFocused || isSelected {
                 RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor, lineWidth: 2)
             }
         }
-        .onHover { isHovering = $0 }
+        // A click outside the text, type and buttons picks the card, ending any editing.
+        .contentShape(.rect(cornerRadius: 12))
+        .onTapGesture {
+            focus.wrappedValue = nil
+            selection?.select(element.id)
+        }
+        .onHover { isHovering in
+            self.isHovering = isHovering
+            selection?.hover(element.id, isHovering)
+        }
     }
 
     /// The strip along a confirmed card's top: drag it to reorder the card, or
