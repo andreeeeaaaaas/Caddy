@@ -26,7 +26,8 @@ nonisolated struct ExportOptions: Sendable {
 
     var format = Format.docx
     var includeThumbnails = true
-    var includeSceneDescriptions = true
+    /// The element types to export, every one to start with.
+    var kinds = Set(ScriptElement.Kind.allCases)
     var includeSuggestions = true
 }
 
@@ -78,14 +79,14 @@ nonisolated struct ExportImage: Sendable {
 
 nonisolated enum Exporter {
     /// Lays out the rows, without frames. Empty elements are left out, and
-    /// scene descriptions and suggestions unless the options include them.
+    /// types and suggestions unless the options include them.
     static func document(title: String, client: String, date: Date, rows: [ScriptRow], fps: Double,
                          options: ExportOptions) -> ExportDocument {
         let sections = rows.map { row in
             let elements = row.elements.filter { element in
                 !element.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     && (options.includeSuggestions || !element.isSuggested)
-                    && (options.includeSceneDescriptions || element.kind != .scene)
+                    && options.kinds.contains(element.kind)
             }
             return ExportSection(
                 time: row.time,

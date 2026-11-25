@@ -13,6 +13,8 @@ struct ExportSheet: View {
     @State private var client: String
     @State private var assetName: String
     @State private var options = ExportOptions()
+    /// Every element type is exported unless this is on, when `options.kinds` picks them.
+    @State private var customElements = false
     @State private var export: Task<Void, Never>?
     @State private var failure: String?
 
@@ -48,8 +50,30 @@ struct ExportSheet: View {
                     LabeledContent("Include:") {
                         VStack(alignment: .leading, spacing: 6) {
                             Toggle("Frame thumbnails", isOn: $options.includeThumbnails)
-                            Toggle("Scene descriptions", isOn: $options.includeSceneDescriptions)
                             Toggle("Suggestions not yet confirmed", isOn: $options.includeSuggestions)
+                            Picker("Elements", selection: $customElements) {
+                                Text("All elements").tag(false)
+                                Text("Custom elements").tag(true)
+                            }
+                            .pickerStyle(.radioGroup)
+                            .labelsHidden()
+                            .padding(.top, 8)
+                            if customElements {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    ForEach(ScriptElement.Kind.allCases, id: \.self) { kind in
+                                        Toggle(isOn: included(kind)) {
+                                            HStack(spacing: 6) {
+                                                Text(kind.exportTitle)
+                                                Text("\(count(of: kind))")
+                                                    .monospacedDigit()
+                                                    .foregroundStyle(.tertiary)
+                                            }
+                                        }
+                                    }
+                                }
+                                // Under the radio buttons' labels.
+                                .padding(.leading, 20)
+                            }
                         }
                     }
                     .padding(.top, 14)
@@ -87,7 +111,7 @@ struct ExportSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Export…", action: chooseFile)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(export != nil || trimmedClient.isEmpty || trimmedAssetName.isEmpty)
+                    .disabled(export != nil || trimmedClient.isEmpty || trimmedAssetName.isEmpty || isEmpty)
             }
         }
         .padding(22)
@@ -99,6 +123,32 @@ struct ExportSheet: View {
         guard suggestionCount > 0 else { return nil }
         let count = suggestionCount == 1 ? "1 suggestion isn't" : "\(suggestionCount) suggestions aren't"
         return "\(count) confirmed yet. " + (options.includeSuggestions ? "They'll be exported as they are." : "They'll be left out.")
+    }
+
+    /// Neither frames nor any element type: nothing would be exported.
+    private var isEmpty: Bool { !options.includeThumbnails && exportOptions.kinds.isEmpty }
+
+    /// The options as exported: every element type unless custom ones are chosen.
+    private var exportOptions: ExportOptions {
+        var options = options
+        if !customElements { options.kinds = Set(ScriptElement.Kind.allCases) }
+        return options
+    }
+
+    private func included(_ kind: ScriptElement.Kind) -> Binding<Bool> {
+        Binding {
+            options.kinds.contains(kind)
+        } set: { isOn in
+            if isOn { options.kinds.insert(kind) } else { options.kinds.remove(kind) }
+        }
+    }
+
+    /// The type's elements with text, counting suggestions only while they're included.
+    private func count(of kind: ScriptElement.Kind) -> Int {
+        rows.flatMap(\.elements).filter { element in
+            element.kind == kind && (options.includeSuggestions || !element.isSuggested)
+                && !element.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }.count
     }
 
     private var trimmedClient: String { client.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -118,7 +168,7 @@ struct ExportSheet: View {
         panel.allowedContentTypes = [options.format.contentType]
         panel.nameFieldStringValue = "\(fileName).\(options.format.fileExtension)"
         panel.canCreateDirectories = true
-        let options = options
+        let options = exportOptions
         export = Task {
             let response = if let window = NSApp.keyWindow {
                 await panel.beginSheetModal(for: window)
@@ -157,6 +207,20 @@ struct ExportSheet: View {
             dismiss()
         } catch {
             failure = "Couldn't save the file. \(error.localizedDescription)"
+        }
+    }
+}
+
+private extension ScriptElement.Kind {
+    /// The type's name in the export sheet's list.
+    var exportTitle: String {
+        switch self {
+        case .scene: "Scene descriptions"
+        case .voiceover: "Voiceover"
+        case .superText: "Supers"
+        case .sfx: "SFX"
+        case .music: "Music"
+        case .disclaimer: "Disclaimers"
         }
     }
 }
